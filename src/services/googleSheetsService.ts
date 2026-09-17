@@ -1,4 +1,5 @@
 import { Transformer, WarehouseConfig, STATUS_CONFIG } from '../types';
+import { cleanBrandToEnglish } from '../utils/customOptions';
 
 export interface ExportResult {
   spreadsheetId: string;
@@ -116,7 +117,7 @@ export async function updateSpreadsheetData(
       idx + 1,
       t.peaNo,
       t.serialNo,
-      t.brand,
+      cleanBrandToEnglish(t.brand),
       t.capacityKva,
       t.phase === '3-Phase' ? '3 เฟส' : '1 เฟส',
       t.voltage || '22 kV / 400-230 V',
@@ -157,7 +158,7 @@ export async function updateSpreadsheetData(
         t.peaNo,
         t.serialNo,
         t.capacityKva,
-        t.brand,
+        cleanBrandToEnglish(t.brand),
         STATUS_CONFIG[t.status]?.label || t.status
       ]);
     } else {
@@ -304,7 +305,7 @@ export async function importTransformersFromSheet(
     if (!peaNo) return;
 
     const serialNo = String(row[2] || `SN-${index + 1}`).trim();
-    const brand = String(row[3] || 'Tirathai').trim();
+    const brand = cleanBrandToEnglish(String(row[3] || 'Tirathai').trim());
     const capacityKva = parseInt(String(row[4] || '50').replace(/[^0-9]/g, ''), 10) || 50;
     const phaseStr = String(row[5] || '').toLowerCase();
     const phase = phaseStr.includes('1') ? '1-phase' : '3-phase';

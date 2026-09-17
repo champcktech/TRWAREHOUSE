@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Transformer, STATUS_CONFIG, WarehouseConfig } from '../types';
+import { cleanBrandToEnglish } from './customOptions';
 
 export function exportToExcel(
   transformers: Transformer[],
@@ -74,7 +75,7 @@ export function exportToExcel(
       'ขนาด (kVA)': t.capacityKva,
       'ระบบเฟส': t.phase,
       'พิกัดแรงดัน': t.voltage || '22 kV / 400-230 V',
-      'ยี่ห้อ': t.brand,
+      'ยี่ห้อ': cleanBrandToEnglish(t.brand),
       'สถานะ': STATUS_CONFIG[t.status].label,
       'สีสถานะ': STATUS_CONFIG[t.status].colorName,
       'โรงงานส่งซ่อม': t.repairVendor || '-',

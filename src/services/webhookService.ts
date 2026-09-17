@@ -1,4 +1,5 @@
 import { Transformer, WarehouseConfig, STATUS_CONFIG } from '../types';
+import { cleanBrandToEnglish } from '../utils/customOptions';
 
 /**
  * Default embedded Webhook URL for Google Sheets integration
@@ -127,7 +128,7 @@ export function buildWebhookPayload(
     transformers: transformers.map((t) => ({
       peaNo: t.peaNo,
       serialNo: t.serialNo,
-      brand: t.brand,
+      brand: cleanBrandToEnglish(t.brand),
       capacityKva: t.capacityKva,
       phase: t.phase,
       voltage: t.voltage,
@@ -396,7 +397,7 @@ export async function copyTransformersToClipboard(
       idx + 1,
       t.peaNo || '',
       t.serialNo || '',
-      t.brand || '',
+      cleanBrandToEnglish(t.brand || ''),
       t.capacityKva || '',
       t.phase === '3-Phase' ? '3 เฟส' : '1 เฟส',
       t.voltage || '22 kV',

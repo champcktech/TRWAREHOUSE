@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG } from '../types';
 import { exportToExcel, exportReportToPDF } from '../utils/exportUtils';
+import { cleanBrandToEnglish } from '../utils/customOptions';
 import { X, FileSpreadsheet, FileText, Printer, CheckCircle, Loader2, Webhook } from 'lucide-react';
 
 interface ExportReportModalProps {
@@ -288,7 +289,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                             {t.capacityKva} kVA ({t.phase === '3-Phase' ? '3P' : '1P'})
                           </td>
                           <td className="py-2 px-2.5 text-[#aaa]">
-                            {t.brand}
+                            {cleanBrandToEnglish(t.brand)}
                           </td>
                           <td className="py-2 px-2.5 text-center">
                             <span

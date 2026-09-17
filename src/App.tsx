@@ -15,6 +15,7 @@ import { WebhookModal } from './components/WebhookModal';
 import { MoveConfirmationModal } from './components/MoveConfirmationModal';
 import { GoogleScriptEmbedView } from './components/GoogleScriptEmbedView';
 import { buildWebhookPayload, sendWebhook, DEFAULT_WEBHOOK_URL } from './services/webhookService';
+import { cleanBrandToEnglish } from './utils/customOptions';
 import { initAuth, User } from './lib/googleAuth';
 import {
   Plus,
@@ -40,7 +41,14 @@ export default function App() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed: Transformer[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Normalize any existing brand to pure English
+          return parsed.map((t) => ({
+            ...t,
+            brand: cleanBrandToEnglish(t.brand || '')
+          }));
+        }
       }
     } catch (e) {
       console.warn('Failed to load from localStorage', e);

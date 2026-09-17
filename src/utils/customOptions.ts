@@ -6,17 +6,18 @@
 export const DEFAULT_CAPACITIES: number[] = [30, 50, 100, 160, 250, 315, 400, 500, 750, 1000];
 
 export const DEFAULT_BRANDS: string[] = [
-  'เอกรัฐ (Ekarat)',
-  'ถิรไทย (Tirathai)',
-  'เจริญชัย (Charoenchai)',
-  'พรีไซซ (Precise)',
-  'คิวทีซี (QTC)',
-  'เอเชีย แทรฟโฟ (Asia Trafo)',
-  'หม้อแปลงไทย (Thai Trafo)',
-  'บางกอกเทรโฟ (Bangkok Trafo)',
-  'เอบีบี (ABB)',
-  'ชไนเดอร์ (Schneider)',
-  'อื่นๆ (Other)',
+  'Ekarat',
+  'Tirathai',
+  'Charoenchai',
+  'Precise',
+  'QTC',
+  'Asia Trafo',
+  'Thai Trafo',
+  'Bangkok Trafo',
+  'ABB',
+  'Schneider',
+  'Siemens',
+  'Other',
 ];
 
 const STORAGE_KEY_CUSTOM_CAPACITIES = 'pea_custom_capacities';
@@ -64,13 +65,46 @@ export function removeCustomCapacity(cap: number): number[] {
   return updated;
 }
 
+// Helper to normalize any existing brand string to pure English
+export function cleanBrandToEnglish(brandName: string): string {
+  if (!brandName) return 'Other';
+  const match = brandName.match(/\(([^)]+)\)/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  // Check if starts or contains Thai and maps to common English
+  const mapping: Record<string, string> = {
+    'เอกรัฐ': 'Ekarat',
+    'ถิรไทย': 'Tirathai',
+    'เจริญชัย': 'Charoenchai',
+    'พรีไซซ': 'Precise',
+    'คิวทีซี': 'QTC',
+    'เอเชีย แทรฟโฟ': 'Asia Trafo',
+    'หม้อแปลงไทย': 'Thai Trafo',
+    'บางกอกเทรโฟ': 'Bangkok Trafo',
+    'เอบีบี': 'ABB',
+    'ชไนเดอร์': 'Schneider',
+    'ซีเมนส์': 'Siemens',
+    'อื่นๆ': 'Other',
+  };
+  for (const [thai, eng] of Object.entries(mapping)) {
+    if (brandName.includes(thai)) {
+      return eng;
+    }
+  }
+  // Remove any remaining Thai characters
+  const stripped = brandName.replace(/[\u0E00-\u0E7F]+/g, '').trim();
+  return stripped || brandName;
+}
+
 export function getStoredBrands(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_BRANDS);
     if (!raw) return DEFAULT_BRANDS;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      const set = new Set([...DEFAULT_BRANDS, ...parsed.map(s => String(s).trim()).filter(Boolean)]);
+      const cleaned = parsed.map(s => cleanBrandToEnglish(String(s).trim())).filter(Boolean);
+      const set = new Set([...DEFAULT_BRANDS, ...cleaned]);
       return Array.from(set);
     }
   } catch {

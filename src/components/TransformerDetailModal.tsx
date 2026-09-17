@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG, WarehouseZoneId, TransformerLocationType } from '../types';
+import { cleanBrandToEnglish } from '../utils/customOptions';
 import { TransformerTriangle } from './TransformerTriangle';
 import { X, Edit2, Trash2, ArrowRightLeft, Calendar, Tag, Zap, Cpu, AlertTriangle, Truck, Wrench } from 'lucide-react';
 
@@ -302,7 +303,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
                 ยี่ห้อ (Brand)
               </span>
               <span className="text-sm font-bold text-white">
-                {transformer.brand}
+                {cleanBrandToEnglish(transformer.brand)}
               </span>
             </div>
 

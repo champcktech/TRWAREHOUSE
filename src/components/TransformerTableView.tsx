@@ -1,5 +1,6 @@
 import React from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG, WarehouseZoneId } from '../types';
+import { cleanBrandToEnglish } from '../utils/customOptions';
 import { Edit2, Trash2, MapPin, Truck, Tag } from 'lucide-react';
 
 interface TransformerTableViewProps {
@@ -132,7 +133,7 @@ export const TransformerTableView: React.FC<TransformerTableViewProps> = ({
                       {t.capacityKva} kVA ({t.phase === '3-Phase' ? '3P' : '1P'})
                     </td>
                     <td className="py-2.5 px-3 text-[#aaa]">
-                      {t.brand}
+                      {cleanBrandToEnglish(t.brand)}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <span

@@ -12,7 +12,8 @@ import {
   getStoredCapacities,
   addCustomCapacity,
   getStoredBrands,
-  addCustomBrand
+  addCustomBrand,
+  cleanBrandToEnglish
 } from '../utils/customOptions';
 
 interface TransformerFormModalProps {
@@ -43,7 +44,7 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
   const [capacityKva, setCapacityKva] = useState<number>(100);
   const [phase, setPhase] = useState<'1-Phase' | '3-Phase'>('3-Phase');
   const [voltage, setVoltage] = useState('22 kV / 400-230 V');
-  const [brand, setBrand] = useState('เอกรัฐ (Ekarat)');
+  const [brand, setBrand] = useState('Ekarat');
   const [status, setStatus] = useState<TransformerStatus>('good');
 
   // Location representation: 'triage' | 'holding' | 'repair' | `${zone}-${slotNumber}`
@@ -87,7 +88,7 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
       setCapacityKva(initialData.capacityKva);
       setPhase(initialData.phase);
       setVoltage(initialData.voltage || '22 kV / 400-230 V');
-      setBrand(initialData.brand);
+      setBrand(cleanBrandToEnglish(initialData.brand));
       setStatus(initialData.status);
 
       if (initialData.locationType === 'triage') {
@@ -116,7 +117,7 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
       setCapacityKva(100);
       setPhase('3-Phase');
       setVoltage('22 kV / 400-230 V');
-      setBrand('เอกรัฐ (Ekarat)');
+      setBrand('Ekarat');
       setStatus('good');
       setLocationSelection('holding');
       setRepairVendor('');
@@ -442,13 +443,13 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
 
               {showAddBrandInput && (
                 <div className="mb-2 p-2 rounded-lg bg-[#181818] border border-orange-500/40 space-y-2">
-                  <p className="text-[10px] text-[#aaa]">พิมพ์ชื่อยี่ห้อใหม่ เช่น ซีเมนส์ (Siemens):</p>
+                  <p className="text-[10px] text-[#aaa]">พิมพ์ชื่อยี่ห้อใหม่ (ภาษาอังกฤษ เช่น Siemens, Hitachi):</p>
                   <div className="flex gap-1.5">
                     <input
                       type="text"
                       value={customBrandValue}
                       onChange={(e) => setCustomBrandValue(e.target.value)}
-                      placeholder="เช่น ซีเมนส์ (Siemens)"
+                      placeholder="เช่น Siemens, Hitachi"
                       className="w-full px-2 py-1 bg-[#101010] border border-[#333] rounded text-xs text-white"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {

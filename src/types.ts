@@ -29,7 +29,7 @@ export interface Transformer {
   capacityKva: number;  // ขนาด เช่น 50, 100, 160, 250, 500 kVA
   phase: '1-Phase' | '3-Phase';
   voltage?: string;     // เช่น 22 kV / 400-230 V
-  brand: string;        // ยี่ห้อ เช่น เอกรัฐ (Ekarat), ถิรไทย (Tirathai), เจริญชัย (Charoenchai)
+  brand: string;        // ยี่ห้อ (ภาษาอังกฤษ เช่น Ekarat, Tirathai, Charoenchai, Precise, QTC, Schneider, ABB)
   status: TransformerStatus;
   slotNumber: number | null; // เลขช่องในผัง (null = อยู่ในจุดพักคลัง/ยังไม่ได้ลงช่อง)
   zone?: WarehouseZoneId;    // โซนซ้าย ('left') หรือ ขวา ('right')
