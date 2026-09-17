@@ -220,7 +220,11 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
       return;
     }
 
-    const { slotNumber: resolvedSlot, zone: resolvedZone, locationType: resolvedLocationType } = parseLocation(locationSelection);
+    // For new transformers: strictly only allowed to be added to holding area
+    const { slotNumber: parsedSlot, zone: parsedZone, locationType: parsedLocationType } = parseLocation(locationSelection);
+    const resolvedSlot = initialData ? parsedSlot : null;
+    const resolvedZone = initialData ? parsedZone : undefined;
+    const resolvedLocationType = initialData ? parsedLocationType : ('holding' as TransformerLocationType);
 
     // If editing existing transformer and location was changed, require move PIN!
     if (initialData) {
@@ -539,25 +543,23 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
                     <label className="block text-xs font-semibold text-[#aaa]">
                       ตำแหน่งจุดวาง / สถานที่จัดเก็บ *
                     </label>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 flex items-center gap-1">
-                      <span>✓</span>
-                      <span>เลือกจุดพักรออัตโนมัติ</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-950/80 text-orange-400 border border-orange-700/60 flex items-center gap-1">
+                      <span>🔒</span>
+                      <span>จุดพักรอจัดเก็บเท่านั้น</span>
                     </span>
                   </div>
-                  <select
-                    value={locationSelection}
-                    onChange={(e) => setLocationSelection(e.target.value)}
-                    aria-label="เลือกสถานที่จัดเก็บเริ่มต้น"
-                    className="w-full px-3 py-2 bg-[#141414] border border-emerald-500/60 rounded-lg text-sm text-[#e5e5e5] focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium"
-                  >
-                    <option value="holding">📦 จุดพักรอจัดเก็บ (Holding Area) — เลือกให้อัตโนมัติ</option>
-                    <option value="triage">🔍 จุดรอคัดแยก (Triage Area - รอตรวจสอบสภาพ)</option>
-                    <option value="repair">🚚 ส่งซ่อมภายนอก (Out for Repair - โรงงาน/ศูนย์ซ่อม)</option>
-                    <option value="sale">🏷️ จุดวางรอขาย (Waiting for Sale - รอจำหน่าย/ขายทอดตลาด)</option>
-                  </select>
-                  <p className="text-[11px] text-emerald-400/90 mt-1.5 flex items-center gap-1">
+                  <div className="w-full px-3.5 py-2.5 bg-[#141414] border border-[#2a2a2a] rounded-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-[#f5f5f5] font-semibold">
+                      <span className="text-base">📦</span>
+                      <span>จุดพักรอจัดเก็บ (Holding Area)</span>
+                    </div>
+                    <span className="text-[10px] font-medium text-[#aaa] bg-[#1c1c1c] px-2 py-0.5 rounded border border-[#333]">
+                      พื้นที่เริ่มต้น
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#888] mt-1.5 flex items-center gap-1">
                     <span>•</span>
-                    <span>ระบบเลือก <strong>จุดพักรอจัดเก็บ (Holding Area)</strong> ให้อัตโนมัติ สามารถลากจัดวางลงผังคลังได้ทันที</span>
+                    <span>หม้อแปลงเพิ่มใหม่จะเข้าสู่ <strong>จุดพักรอจัดเก็บ</strong> เท่านั้น จากนั้นสามารถลากจัดวางลงผังคลังได้</span>
                   </p>
                 </div>
               ) : (

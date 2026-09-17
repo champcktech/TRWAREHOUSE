@@ -9,6 +9,7 @@ interface TransformerTableViewProps {
   onEdit: (transformer: Transformer) => void;
   onDelete: (id: string) => void;
   onJumpToSlot: (slot: number, zone?: WarehouseZoneId) => void;
+  onClearAll?: () => void;
 }
 
 export const TransformerTableView: React.FC<TransformerTableViewProps> = ({
@@ -17,7 +18,8 @@ export const TransformerTableView: React.FC<TransformerTableViewProps> = ({
   onSelect,
   onEdit,
   onDelete,
-  onJumpToSlot
+  onJumpToSlot,
+  onClearAll,
 }) => {
   const gridPrefix = config.zonePrefix || config.leftGrid?.zonePrefix || 'A';
 
@@ -27,6 +29,14 @@ export const TransformerTableView: React.FC<TransformerTableViewProps> = ({
         <h3 className="text-sm font-bold text-white tracking-tight">
           รายการหม้อแปลงทั้งหมด ({transformers.length} เครื่อง)
         </h3>
+        {onClearAll && transformers.length > 0 && (
+          <button
+            onClick={onClearAll}
+            className="text-xs px-2.5 py-1 text-rose-400 hover:text-rose-300 bg-rose-950/30 hover:bg-rose-950/60 border border-rose-800/50 rounded transition-colors font-semibold"
+          >
+            ลบหม้อแปลงทั้งหมด ({transformers.length})
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto">

@@ -133,6 +133,9 @@ export default function App() {
     }
   });
 
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
   const handleSaveWebhookUrl = (url: string) => {
     setWebhookUrl(url);
     try {
@@ -159,16 +162,23 @@ export default function App() {
       isInitialMount.current = false;
       return;
     }
-    if (autoSyncWebhook && webhookUrl.trim()) {
+    if (autoSyncWebhook && webhookUrl && webhookUrl.trim()) {
+      setSyncStatus('syncing');
       const timer = setTimeout(async () => {
         try {
           const payload = buildWebhookPayload(transformers, config, 'sync_all');
-          await sendWebhook(webhookUrl.trim(), payload);
-          console.log('Webhook auto-synced successfully');
+          const res = await sendWebhook(webhookUrl.trim(), payload);
+          if (res.success) {
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+          } else {
+            setSyncStatus('error');
+          }
         } catch (err) {
+          setSyncStatus('error');
           console.warn('Auto-sync webhook failed:', err);
         }
-      }, 1500);
+      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [transformers, config, autoSyncWebhook, webhookUrl]);
@@ -291,12 +301,59 @@ export default function App() {
 
   const handleDeleteTransformer = (id: string) => {
     const target = transformers.find((t) => t.id === id);
-    setTransformers((prev) => prev.filter((t) => t.id !== id));
+    const updated = transformers.filter((t) => t.id !== id);
+    setTransformers(updated);
     if (selectedTransformer?.id === id) {
       setIsDetailModalOpen(false);
       setSelectedTransformer(null);
     }
-    showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} ออกจากผังคลังแล้ว`);
+    showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} เรียบร้อยแล้ว`);
+
+    // Instant sync to Google Sheets if connected
+    if (autoSyncWebhook && webhookUrl && webhookUrl.trim()) {
+      setSyncStatus('syncing');
+      const payload = buildWebhookPayload(updated, config, 'sync_all');
+      sendWebhook(webhookUrl.trim(), payload)
+        .then((res) => {
+          if (res.success) {
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+            showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} และซิงค์ลบใน Google Sheet สำเร็จแล้ว`);
+          } else {
+            setSyncStatus('error');
+          }
+        })
+        .catch(() => {
+          setSyncStatus('error');
+        });
+    }
+  };
+
+  const handleClearAllTransformers = () => {
+    if (!confirm(`คุณต้องการลบหม้อแปลงทั้งหมดในระบบ (${transformers.length} เครื่อง) ใช่หรือไม่?\nข้อมูลทั้งหมดจะถูกลบและล้างออกจาก Google Sheet ด้วย`)) {
+      return;
+    }
+    setTransformers([]);
+    localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
+    showNotification('ลบหม้อแปลงทั้งหมดในระบบเรียบร้อยแล้ว');
+
+    if (webhookUrl && webhookUrl.trim()) {
+      setSyncStatus('syncing');
+      const payload = buildWebhookPayload([], config, 'sync_all');
+      sendWebhook(webhookUrl.trim(), payload)
+        .then((res) => {
+          if (res.success) {
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+            showNotification('ล้างข้อมูลหม้อแปลงทั้งหมดใน Google Sheet เรียบร้อยแล้ว');
+          } else {
+            setSyncStatus('error');
+          }
+        })
+        .catch(() => {
+          setSyncStatus('error');
+        });
+    }
   };
 
   const handleMoveTransformer = (
@@ -434,15 +491,11 @@ export default function App() {
     return `ช่อง ${prefix} ${String(pendingMove.targetSlot).padStart(2, '0')}`;
   };
 
-  const handleOpenAddModal = (
-    slotNumber: number | null = null,
-    zone: WarehouseZoneId = 'left',
-    locationType: TransformerLocationType = 'holding'
-  ) => {
+  const handleOpenAddModal = () => {
     setEditingTransformer(null);
-    setAddAtSlotNumber(slotNumber);
-    setAddAtZone(zone);
-    setAddAtLocationType(locationType);
+    setAddAtSlotNumber(null);
+    setAddAtZone('left');
+    setAddAtLocationType('holding');
     setIsFormModalOpen(true);
   };
 
@@ -605,6 +658,43 @@ export default function App() {
               </button>
             </div>
 
+            {/* Google Sheets Integration & Live Status */}
+            <button
+              onClick={() => setIsWebhookModalOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all border ${
+                syncStatus === 'syncing'
+                  ? 'bg-amber-950/40 text-amber-300 border-amber-600/70 animate-pulse'
+                  : syncStatus === 'synced'
+                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/50'
+                  : syncStatus === 'error'
+                  ? 'bg-rose-950/40 text-rose-300 border-rose-700/60 hover:bg-rose-900/50'
+                  : 'bg-[#1a1a1a] text-[#e5e5e5] border-[#333] hover:bg-[#252525]'
+              }`}
+              title={`Google Sheets: ${
+                syncStatus === 'synced'
+                  ? `ซิงค์เรียบร้อย (${lastSyncTime || ''})`
+                  : syncStatus === 'syncing'
+                  ? 'กำลังซิงค์ข้อมูล...'
+                  : syncStatus === 'error'
+                  ? 'ซิงค์ไม่สำเร็จ คลิกเพื่อตรวจสอบ'
+                  : 'ตั้งค่าและซิงค์ข้อมูล Google Sheets'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <span>Google Sheets</span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  syncStatus === 'syncing'
+                    ? 'bg-amber-400 animate-ping'
+                    : syncStatus === 'synced'
+                    ? 'bg-emerald-400'
+                    : syncStatus === 'error'
+                    ? 'bg-rose-500'
+                    : 'bg-emerald-500'
+                }`}
+              />
+            </button>
+
             {/* Export Report Button (Excel & PDF) */}
             <button
               onClick={() => setIsExportModalOpen(true)}
@@ -665,7 +755,7 @@ export default function App() {
           onTargetSlotInputChange={setTargetSlotInput}
           onJumpToSlot={handleJumpToSlot}
           totalFound={filteredTransformers.length}
-          onAddNew={() => handleOpenAddModal(null, 'left', 'holding')}
+          onAddNew={handleOpenAddModal}
         />
 
         {/* 3. Main Display View: Floor Plan OR Table OR Embedded Google Script */}
@@ -701,6 +791,7 @@ export default function App() {
             onEdit={handleOpenEditModal}
             onDelete={handleDeleteTransformer}
             onJumpToSlot={handleJumpToSlot}
+            onClearAll={handleClearAllTransformers}
           />
         ) : (
           <GoogleScriptEmbedView
