@@ -603,51 +603,7 @@ export default function App() {
                 <List className="w-3.5 h-3.5" />
                 <span>ตารางรายการ</span>
               </button>
-              <button
-                onClick={() => setViewMode('script')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${
-                  viewMode === 'script'
-                    ? 'bg-[#142332] text-cyan-300 border border-cyan-800 shadow-xs'
-                    : 'text-[#888] hover:text-cyan-300'
-                }`}
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
-                <span>ฝัง GOOGLE SCRIPT</span>
-              </button>
             </div>
-
-            {/* Webhook Integration Button */}
-            <button
-              onClick={() => setIsWebhookModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-[#26150b] border border-orange-700/80 hover:border-orange-500 rounded hover:bg-[#381f10] text-orange-300 hover:text-orange-100 transition-colors shadow-xs"
-              title={webhookUrl ? `Webhook: ${webhookUrl}` : 'ตั้งค่า Webhook'}
-            >
-              <Webhook className="w-4 h-4 text-orange-400" />
-              <span>WEBHOOK</span>
-              {webhookUrl.trim() ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Webhook พร้อมใช้งาน" />
-              ) : (
-                <span className="text-[9.5px] bg-[#1a0f07] px-1 py-0.2 text-orange-400 rounded border border-orange-800/60 font-mono">
-                  ตั้งค่า
-                </span>
-              )}
-            </button>
-
-            {/* Google Sheets Integration Button */}
-            <button
-              onClick={() => setIsGoogleSheetsModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#14281b] border border-emerald-700/70 hover:border-emerald-500 rounded hover:bg-[#1a3524] text-emerald-300 hover:text-emerald-100 transition-colors shadow-xs"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span>GOOGLE SHEETS</span>
-              {currentUser ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title={`เชื่อมต่อแล้ว: ${currentUser.email || ''}`} />
-              ) : (
-                <span className="text-[9.5px] bg-[#0e1d13] px-1 py-0.2 text-emerald-400 rounded border border-emerald-800/60 font-mono">
-                  OAuth
-                </span>
-              )}
-            </button>
 
             {/* Export Report Button (Excel & PDF) */}
             <button
@@ -709,6 +665,7 @@ export default function App() {
           onTargetSlotInputChange={setTargetSlotInput}
           onJumpToSlot={handleJumpToSlot}
           totalFound={filteredTransformers.length}
+          onAddNew={() => handleOpenAddModal(null, 'left', 'holding')}
         />
 
         {/* 3. Main Display View: Floor Plan OR Table OR Embedded Google Script */}
@@ -734,7 +691,6 @@ export default function App() {
               highlightedId={highlightedTransformerId}
               onSelectTransformer={handleSelectTransformer}
               onMoveTransformer={handleMoveTransformer}
-              onAddNew={() => handleOpenAddModal(null, 'left', 'holding')}
             />
           </div>
         ) : viewMode === 'table' ? (

@@ -16,7 +16,7 @@ interface HoldingAreaProps {
     targetZone?: WarehouseZoneId,
     targetLocationType?: TransformerLocationType
   ) => void;
-  onAddNew: () => void;
+  onAddNew?: () => void;
 }
 
 export const HoldingArea: React.FC<HoldingAreaProps> = ({
@@ -74,31 +74,32 @@ export const HoldingArea: React.FC<HoldingAreaProps> = ({
       >
         <div>
           {/* Header */}
-          <div className="flex items-start justify-between gap-2 pb-3 mb-3 border-b border-[#1c1c1c]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-2 rounded-lg bg-indigo-950/60 border border-indigo-700/50 text-indigo-400 shrink-0">
-                <ClipboardCheck className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+          <div className="pb-3 mb-3 border-b border-[#1c1c1c] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-lg bg-indigo-950/60 border border-indigo-700/50 text-indigo-400 shrink-0">
+                  <ClipboardCheck className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white tracking-tight truncate">
                     จุดรอคัดแยก
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-950/60 border border-indigo-800/60 text-indigo-300 shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-indigo-950/60 border border-indigo-800/60 text-indigo-300 inline-block mt-0.5">
                     รอตรวจสอบสภาพ
                   </span>
                 </div>
-                <p className="text-[11px] text-[#777] mt-0.5 line-clamp-1">
-                  หม้อแปลงถอดรื้อ/รับเข้า รอตรวจสอบก่อนจัดเก็บ
-                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-[#161616] border border-[#2a2a2a] text-[#aaa]">
+                  {triageTransformers.length} เครื่อง
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-[#161616] border border-[#2a2a2a] text-[#aaa]">
-                {triageTransformers.length} เครื่อง
-              </span>
-            </div>
+            <p className="text-[11px] text-[#777] line-clamp-1 pt-0.5">
+              หม้อแปลงถอดรื้อ/รับเข้า รอตรวจสอบก่อนจัดเก็บ
+            </p>
           </div>
 
           {/* List Area */}
@@ -147,40 +148,32 @@ export const HoldingArea: React.FC<HoldingAreaProps> = ({
       >
         <div>
           {/* Header */}
-          <div className="flex items-start justify-between gap-2 pb-3 mb-3 border-b border-[#1c1c1c]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-2 rounded-lg bg-orange-950/60 border border-orange-700/50 text-orange-400 shrink-0">
-                <Package className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+          <div className="pb-3 mb-3 border-b border-[#1c1c1c] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-lg bg-orange-950/60 border border-orange-700/50 text-orange-400 shrink-0">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white tracking-tight truncate">
                     จุดพักรอจัดเก็บ
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#1a1a1a] border border-[#333] text-[#aaa] shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#1a1a1a] border border-[#333] text-[#aaa] inline-block mt-0.5">
                     พร้อมจัดเก็บเข้าช่อง
                   </span>
                 </div>
-                <p className="text-[11px] text-[#777] mt-0.5 line-clamp-1">
-                  พักรอจัดวาง สามารถลากลงผังคลังซ้าย/ขวาได้ทันที
-                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-[#161616] border border-[#2a2a2a] text-[#aaa]">
+                  {unassignedTransformers.length} เครื่อง
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-[#161616] border border-[#2a2a2a] text-[#aaa]">
-                {unassignedTransformers.length} เครื่อง
-              </span>
-              <button
-                type="button"
-                onClick={onAddNew}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-500 rounded-lg transition-colors shadow-xs whitespace-nowrap"
-                title="เพิ่มหม้อแปลงใหม่ลงในจุดพักรอจัดเก็บ"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ เพิ่มหม้อแปลงใหม่</span>
-              </button>
-            </div>
+            <p className="text-[11px] text-[#777] line-clamp-1 pt-0.5">
+              พักรอจัดวาง สามารถลากลงผังคลังได้ทันที
+            </p>
           </div>
 
           {/* List Area */}
@@ -228,31 +221,32 @@ export const HoldingArea: React.FC<HoldingAreaProps> = ({
       >
         <div>
           {/* Header */}
-          <div className="flex items-start justify-between gap-2 pb-3 mb-3 border-b border-[#1c1c1c]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-2 rounded-lg bg-sky-950/60 border border-sky-700/50 text-sky-400 shrink-0">
-                <Truck className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+          <div className="pb-3 mb-3 border-b border-[#1c1c1c] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-lg bg-sky-950/60 border border-sky-700/50 text-sky-400 shrink-0">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white tracking-tight truncate">
                     ส่งซ่อมภายนอก
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-sky-950/60 border border-sky-800/60 text-sky-300 shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-sky-950/60 border border-sky-800/60 text-sky-300 inline-block mt-0.5">
                     โรงงาน / ซ่อมใหญ่
                   </span>
                 </div>
-                <p className="text-[11px] text-[#777] mt-0.5 line-clamp-1">
-                  อยู่นอกคลัง คืนช่องว่างในผังอัตโนมัติ
-                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-sky-950/30 border border-sky-800/40 text-sky-300">
+                  {repairTransformers.length} เครื่อง
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-sky-950/30 border border-sky-800/40 text-sky-300">
-                {repairTransformers.length} เครื่อง
-              </span>
-            </div>
+            <p className="text-[11px] text-[#777] line-clamp-1 pt-0.5">
+              อยู่นอกคลัง คืนช่องว่างในผังอัตโนมัติ
+            </p>
           </div>
 
           {/* List Area */}
@@ -306,31 +300,32 @@ export const HoldingArea: React.FC<HoldingAreaProps> = ({
       >
         <div>
           {/* Header */}
-          <div className="flex items-start justify-between gap-2 pb-3 mb-3 border-b border-[#1c1c1c]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-2 rounded-lg bg-purple-950/60 border border-purple-700/50 text-purple-400 shrink-0">
-                <Tag className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+          <div className="pb-3 mb-3 border-b border-[#1c1c1c] space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="p-2 rounded-lg bg-purple-950/60 border border-purple-700/50 text-purple-400 shrink-0">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
                   <h3 className="text-sm font-bold text-white tracking-tight truncate">
                     จุดวางรอขาย
                   </h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-950/60 border border-purple-800/60 text-purple-300 shrink-0">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-purple-950/60 border border-purple-800/60 text-purple-300 inline-block mt-0.5">
                     รอจำหน่าย / ขายทอดตลาด
                   </span>
                 </div>
-                <p className="text-[11px] text-[#777] mt-0.5 line-clamp-1">
-                  หม้อแปลงชำรุด/ปลดรื้อ รออนุมัติจำหน่ายหรือประมูลขาย
-                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-purple-950/30 border border-purple-800/40 text-purple-300">
+                  {saleTransformers.length} เครื่อง
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-xs font-mono font-semibold px-2 py-1 rounded bg-purple-950/30 border border-purple-800/40 text-purple-300">
-                {saleTransformers.length} เครื่อง
-              </span>
-            </div>
+            <p className="text-[11px] text-[#777] line-clamp-1 pt-0.5">
+              หม้อแปลงชำรุด/ปลดรื้อ รออนุมัติจำหน่ายหรือประมูลขาย
+            </p>
           </div>
 
           {/* List Area */}
