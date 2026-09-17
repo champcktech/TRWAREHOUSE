@@ -1,0 +1,107 @@
+/**
+ * Utilities for managing user-customizable Transformer Capacities (kVA) and Brands
+ * with localStorage persistence.
+ */
+
+export const DEFAULT_CAPACITIES: number[] = [30, 50, 100, 160, 250, 315, 400, 500, 750, 1000];
+
+export const DEFAULT_BRANDS: string[] = [
+  'เอกรัฐ (Ekarat)',
+  'ถิรไทย (Tirathai)',
+  'เจริญชัย (Charoenchai)',
+  'พรีไซซ (Precise)',
+  'คิวทีซี (QTC)',
+  'เอเชีย แทรฟโฟ (Asia Trafo)',
+  'หม้อแปลงไทย (Thai Trafo)',
+  'บางกอกเทรโฟ (Bangkok Trafo)',
+  'เอบีบี (ABB)',
+  'ชไนเดอร์ (Schneider)',
+  'อื่นๆ (Other)',
+];
+
+const STORAGE_KEY_CUSTOM_CAPACITIES = 'pea_custom_capacities';
+const STORAGE_KEY_CUSTOM_BRANDS = 'pea_custom_brands';
+
+export function getStoredCapacities(): number[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_CAPACITIES);
+    if (!raw) return DEFAULT_CAPACITIES;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // Merge unique and sort ascending
+      const set = new Set([...DEFAULT_CAPACITIES, ...parsed.map(Number).filter(n => !isNaN(n) && n > 0)]);
+      return Array.from(set).sort((a, b) => a - b);
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_CAPACITIES;
+}
+
+export function addCustomCapacity(newCap: number): number[] {
+  const current = getStoredCapacities();
+  if (!current.includes(newCap) && newCap > 0) {
+    const updated = [...current, newCap].sort((a, b) => a - b);
+    try {
+      localStorage.setItem(STORAGE_KEY_CUSTOM_CAPACITIES, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    return updated;
+  }
+  return current;
+}
+
+export function removeCustomCapacity(cap: number): number[] {
+  const current = getStoredCapacities();
+  // Don't remove core defaults if they match unless desired
+  const updated = current.filter((c) => c !== cap);
+  try {
+    localStorage.setItem(STORAGE_KEY_CUSTOM_CAPACITIES, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+  return updated;
+}
+
+export function getStoredBrands(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_BRANDS);
+    if (!raw) return DEFAULT_BRANDS;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const set = new Set([...DEFAULT_BRANDS, ...parsed.map(s => String(s).trim()).filter(Boolean)]);
+      return Array.from(set);
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_BRANDS;
+}
+
+export function addCustomBrand(newBrand: string): string[] {
+  const trimmed = newBrand.trim();
+  if (!trimmed) return getStoredBrands();
+  const current = getStoredBrands();
+  if (!current.some((b) => b.toLowerCase() === trimmed.toLowerCase())) {
+    const updated = [...current, trimmed];
+    try {
+      localStorage.setItem(STORAGE_KEY_CUSTOM_BRANDS, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    return updated;
+  }
+  return current;
+}
+
+export function removeCustomBrand(brand: string): string[] {
+  const current = getStoredBrands();
+  const updated = current.filter((b) => b !== brand);
+  try {
+    localStorage.setItem(STORAGE_KEY_CUSTOM_BRANDS, JSON.stringify(updated));
+  } catch {
+    // ignore
+  }
+  return updated;
+}

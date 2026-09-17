@@ -1,0 +1,6 @@
+{
+  "name": "ผังคลังและจุดวางหม้อแปลงไฟฟ้า",
+  "description": "ระบบบริหารจัดการผังคลังจุดวางหม้อแปลงไฟฟ้า แผนผังช่องวางแนวตั้ง ย้ายสัญลักษณ์สามเหลี่ยม ค้นหาง่าย เชื่อมต่อ Webhook ส่งข้อมูลเข้า Google Sheets อัตโนมัติ และส่งออกรายงาน Excel/PDF",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
