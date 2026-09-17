@@ -533,28 +533,38 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Position / Location in warehouse (Holding, Triage, Left Grid, Right Grid) */}
             <div>
-              <label className="block text-xs font-semibold text-[#aaa] mb-1">
-                ตำแหน่งจุดวาง / สถานที่จัดเก็บ *
-              </label>
               {!initialData ? (
                 <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-[#aaa]">
+                      ตำแหน่งจุดวาง / สถานที่จัดเก็บ *
+                    </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 flex items-center gap-1">
+                      <span>✓</span>
+                      <span>เลือกจุดพักรออัตโนมัติ</span>
+                    </span>
+                  </div>
                   <select
                     value={locationSelection}
                     onChange={(e) => setLocationSelection(e.target.value)}
                     aria-label="เลือกสถานที่จัดเก็บเริ่มต้น"
-                    className="w-full px-3 py-2 bg-[#141414] border border-orange-500/60 rounded-lg text-sm text-[#e5e5e5] focus:outline-hidden focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                    className="w-full px-3 py-2 bg-[#141414] border border-emerald-500/60 rounded-lg text-sm text-[#e5e5e5] focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-medium"
                   >
-                    <option value="holding">📦 จุดพักรอจัดเก็บ (Holding Area - ค่าเริ่มต้น)</option>
+                    <option value="holding">📦 จุดพักรอจัดเก็บ (Holding Area) — เลือกให้อัตโนมัติ</option>
                     <option value="triage">🔍 จุดรอคัดแยก (Triage Area - รอตรวจสอบสภาพ)</option>
                     <option value="repair">🚚 ส่งซ่อมภายนอก (Out for Repair - โรงงาน/ศูนย์ซ่อม)</option>
                     <option value="sale">🏷️ จุดวางรอขาย (Waiting for Sale - รอจำหน่าย/ขายทอดตลาด)</option>
                   </select>
-                  <p className="text-[11px] text-[#777] mt-1">
-                    * หม้อแปลงใหม่จะบันทึกเข้าสู่พื้นที่ที่เลือก สามารถลากจัดวางลงผังคลังได้ในภายหลัง
+                  <p className="text-[11px] text-emerald-400/90 mt-1.5 flex items-center gap-1">
+                    <span>•</span>
+                    <span>ระบบเลือก <strong>จุดพักรอจัดเก็บ (Holding Area)</strong> ให้อัตโนมัติ สามารถลากจัดวางลงผังคลังได้ทันที</span>
                   </p>
                 </div>
               ) : (
                 <>
+                  <label className="block text-xs font-semibold text-[#aaa] mb-1">
+                    ตำแหน่งจุดวาง / สถานที่จัดเก็บ *
+                  </label>
                   <select
                     value={locationSelection}
                     onChange={(e) => setLocationSelection(e.target.value)}
