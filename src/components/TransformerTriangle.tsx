@@ -1,5 +1,6 @@
 import React from 'react';
 import { Transformer, STATUS_CONFIG } from '../types';
+import { normalizePeaNo } from '../utils/customOptions';
 
 interface TransformerTriangleProps {
   transformer: Transformer;
@@ -23,8 +24,8 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
   const statusConfig = STATUS_CONFIG[transformer.status];
   const effectiveSize: 'compact' | 'normal' | 'large' = size || (compact ? 'compact' : 'normal');
 
-  // Strip 'PEA' prefix if already present in string so we show only the code/number
-  const cleanPeaNo = transformer.peaNo ? transformer.peaNo.replace(/^PEA\s*[-_]?\s*/i, '').trim() : '';
+  // Format PEA code so it always includes TR prefix in front of transformer number
+  const displayPeaNo = normalizePeaNo(transformer.peaNo);
   const is3Phase = transformer.phase === '3-Phase';
 
   // Dimension helpers based on scale
@@ -58,10 +59,10 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
 
   const peaBadgeStyle =
     effectiveSize === 'compact'
-      ? 'px-1.5 py-0.5 text-[9px] sm:text-[9.5px] max-w-[68px] sm:max-w-[76px]'
+      ? 'px-1 py-0.5 text-[8.5px] sm:text-[9px] max-w-[80px] sm:max-w-[88px]'
       : effectiveSize === 'normal'
-      ? 'px-2 py-0.5 text-[10px] sm:text-[11px] max-w-[82px] sm:max-w-[94px]'
-      : 'px-2.5 py-1 text-xs max-w-[100px] sm:max-w-[115px]';
+      ? 'px-1.5 py-0.5 text-[9.5px] sm:text-[10px] max-w-[96px] sm:max-w-[108px]'
+      : 'px-2 py-0.5 text-xs max-w-[120px] sm:max-w-[130px]';
 
   const phaseLabel =
     effectiveSize === 'compact'
@@ -84,7 +85,7 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
           ? 'ring-2 ring-orange-400 ring-offset-2 ring-offset-[#0a0a0a] animate-pulse scale-105 z-20'
           : ''
       }`}
-      title={`${transformer.peaNo} | ขนาด ${transformer.capacityKva} kVA | ระบบ ${transformer.phase} (${statusConfig.label})`}
+      title={`${displayPeaNo} | ขนาด ${transformer.capacityKva} kVA | ระบบ ${transformer.phase} (${statusConfig.label})`}
     >
       {/* Visual Triangle Shape Container */}
       <div className="relative flex flex-col items-center justify-center">
@@ -164,7 +165,7 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
           }`}
         >
           <span className="text-white font-mono tracking-tight truncate">
-            {cleanPeaNo}
+            {displayPeaNo}
           </span>
         </div>
       </div>

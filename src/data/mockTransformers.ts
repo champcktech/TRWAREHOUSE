@@ -17,7 +17,7 @@ export const DEFAULT_WAREHOUSE_CONFIG: WarehouseConfig = {
 export const INITIAL_TRANSFORMERS: Transformer[] = [
   {
     id: 'tr-01',
-    peaNo: 'PEA 51-002341',
+    peaNo: 'TR 51-002341',
     serialNo: 'SN-EK-2023-8812',
     capacityKva: 100,
     phase: '3-Phase',
@@ -31,7 +31,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-02',
-    peaNo: 'PEA 51-004512',
+    peaNo: 'TR 51-004512',
     serialNo: 'SN-TR-2022-1943',
     capacityKva: 160,
     phase: '3-Phase',
@@ -45,7 +45,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-03',
-    peaNo: 'PEA 52-008921',
+    peaNo: 'TR 52-008921',
     serialNo: 'SN-CC-2021-0941',
     capacityKva: 250,
     phase: '3-Phase',
@@ -59,7 +59,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-04',
-    peaNo: 'PEA 50-001102',
+    peaNo: 'TR 50-001102',
     serialNo: 'SN-PR-2020-5532',
     capacityKva: 50,
     phase: '1-Phase',
@@ -73,7 +73,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-05',
-    peaNo: 'PEA 49-003319',
+    peaNo: 'TR 49-003319',
     serialNo: 'SN-QT-2019-7419',
     capacityKva: 500,
     phase: '3-Phase',
@@ -87,7 +87,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-06',
-    peaNo: 'PEA 53-010452',
+    peaNo: 'TR 53-010452',
     serialNo: 'SN-EK-2024-0015',
     capacityKva: 160,
     phase: '3-Phase',
@@ -101,7 +101,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-07',
-    peaNo: 'PEA 52-007761',
+    peaNo: 'TR 52-007761',
     serialNo: 'SN-AT-2022-3321',
     capacityKva: 30,
     phase: '1-Phase',
@@ -115,7 +115,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-08',
-    peaNo: 'PEA 51-009188',
+    peaNo: 'TR 51-009188',
     serialNo: 'SN-TR-2023-4410',
     capacityKva: 250,
     phase: '3-Phase',
@@ -129,7 +129,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-09',
-    peaNo: 'PEA 48-005612',
+    peaNo: 'TR 48-005612',
     serialNo: 'SN-CC-2018-9120',
     capacityKva: 100,
     phase: '3-Phase',
@@ -143,7 +143,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-10',
-    peaNo: 'PEA 52-003348',
+    peaNo: 'TR 52-003348',
     serialNo: 'SN-EK-2022-7721',
     capacityKva: 315,
     phase: '3-Phase',
@@ -157,7 +157,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-11',
-    peaNo: 'PEA 53-012903',
+    peaNo: 'TR 53-012903',
     serialNo: 'SN-PR-2024-1189',
     capacityKva: 50,
     phase: '1-Phase',
@@ -171,7 +171,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-12',
-    peaNo: 'PEA 51-006611',
+    peaNo: 'TR 51-006611',
     serialNo: 'SN-QT-2023-5591',
     capacityKva: 160,
     phase: '3-Phase',
@@ -185,7 +185,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-13',
-    peaNo: 'PEA 50-008124',
+    peaNo: 'TR 50-008124',
     serialNo: 'SN-TR-2021-3310',
     capacityKva: 400,
     phase: '3-Phase',
@@ -199,7 +199,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-14',
-    peaNo: 'PEA 53-014561',
+    peaNo: 'TR 53-014561',
     serialNo: 'SN-EK-2024-9021',
     capacityKva: 100,
     phase: '3-Phase',
@@ -213,7 +213,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-15',
-    peaNo: 'PEA 49-009941',
+    peaNo: 'TR 49-009941',
     serialNo: 'SN-CC-2019-4412',
     capacityKva: 50,
     phase: '1-Phase',
@@ -227,7 +227,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-16',
-    peaNo: 'PEA 52-004491',
+    peaNo: 'TR 52-004491',
     serialNo: 'SN-AT-2022-8822',
     capacityKva: 250,
     phase: '3-Phase',
@@ -243,7 +243,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-left-01',
-    peaNo: 'PEA 51-007122',
+    peaNo: 'TR 51-007122',
     serialNo: 'SN-TR-2023-4101',
     capacityKva: 250,
     phase: '3-Phase',
@@ -259,7 +259,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-left-02',
-    peaNo: 'PEA 52-009834',
+    peaNo: 'TR 52-009834',
     serialNo: 'SN-CC-2024-5512',
     capacityKva: 160,
     phase: '3-Phase',
@@ -276,7 +276,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   // จุดรอคัดแยก (Triage Area - รอตรวจสอบ/คัดแยกสภาพ)
   {
     id: 'tr-triage-01',
-    peaNo: 'PEA 54-001299',
+    peaNo: 'TR 54-001299',
     serialNo: 'SN-EK-2024-3321',
     capacityKva: 250,
     phase: '3-Phase',
@@ -292,7 +292,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   // Unassigned in holding area (จุดพักรอจัดเก็บ)
   {
     id: 'tr-17',
-    peaNo: 'PEA 53-015882',
+    peaNo: 'TR 53-015882',
     serialNo: 'SN-EK-2024-9988',
     capacityKva: 160,
     phase: '3-Phase',
@@ -307,7 +307,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-18',
-    peaNo: 'PEA 51-003399',
+    peaNo: 'TR 51-003399',
     serialNo: 'SN-PR-2023-7711',
     capacityKva: 100,
     phase: '3-Phase',
@@ -323,7 +323,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   // จุดวางรอขาย (Waiting for Sale / Auction Area)
   {
     id: 'tr-sale-01',
-    peaNo: 'PEA 48-009912',
+    peaNo: 'TR 48-009912',
     serialNo: 'SN-OLD-2015-4421',
     capacityKva: 50,
     phase: '1-Phase',
@@ -338,7 +338,7 @@ export const INITIAL_TRANSFORMERS: Transformer[] = [
   },
   {
     id: 'tr-sale-02',
-    peaNo: 'PEA 49-001872',
+    peaNo: 'TR 49-001872',
     serialNo: 'SN-TR-2016-5509',
     capacityKva: 100,
     phase: '3-Phase',

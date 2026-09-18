@@ -97,6 +97,39 @@ export function cleanBrandToEnglish(brandName: string): string {
   return stripped || brandName;
 }
 
+/**
+ * Normalizes PEA No. so that it always has "TR " prefix in front of the transformer number.
+ * e.g. "51-002341" -> "TR 51-002341"
+ * e.g. "PEA 51-002341" -> "TR 51-002341"
+ * e.g. "TR 51-002341" -> "TR 51-002341"
+ */
+export function normalizePeaNo(peaNo: string): string {
+  if (!peaNo) return '';
+  const trimmed = peaNo.trim();
+  if (!trimmed) return '';
+
+  // Case 1: Already has PEA and TR, e.g. "PEA TR 51-002341" or "PEA-TR-51-002341"
+  if (/^PEA[\s-_]*TR[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^PEA[\s-_]*TR[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+
+  // Case 2: Already has TR, e.g. "TR 51-002341" or "TR-51-002341" or "tr04..."
+  if (/^TR[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^TR[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+
+  // Case 3: Has PEA prefix only, e.g. "PEA 51-002341" or "PEA-51-002341"
+  if (/^PEA[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^PEA[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+
+  // Case 4: Raw number e.g. "51-002341"
+  return `TR ${trimmed}`;
+}
+
 export function getStoredBrands(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CUSTOM_BRANDS);

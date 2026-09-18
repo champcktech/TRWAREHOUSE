@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG } from '../types';
+import { normalizePeaNo, cleanBrandToEnglish } from '../utils/customOptions';
 import { Lock, ArrowRight, ShieldCheck, KeyRound, AlertCircle, Check, X } from 'lucide-react';
 
 interface MoveConfirmationModalProps {
@@ -59,7 +60,7 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
   if (!isOpen || !transformer) return null;
 
   const statusConfig = STATUS_CONFIG[transformer.status];
-  const cleanPeaNo = transformer.peaNo.replace(/^PEA\s*[-_]?\s*/i, '').trim();
+  const displayPeaNo = normalizePeaNo(transformer.peaNo);
 
   const handleVerifyAndConfirm = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -143,10 +144,10 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                  PEA
+                  PEA No.
                 </span>
                 <span className="font-mono font-bold text-base text-white">
-                  {cleanPeaNo}
+                  {displayPeaNo}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs text-[#aaa]">
@@ -156,7 +157,7 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
                   {transformer.phase}
                 </span>
                 <span>•</span>
-                <span className="truncate max-w-[120px]">{transformer.brand}</span>
+                <span className="truncate max-w-[120px]">{cleanBrandToEnglish(transformer.brand)}</span>
               </div>
             </div>
 
