@@ -30,6 +30,7 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   History,
+  RefreshCw,
 } from 'lucide-react';
 
 interface WebhookModalProps {
@@ -42,6 +43,8 @@ interface WebhookModalProps {
   autoSync: boolean;
   onToggleAutoSync: (enabled: boolean) => void;
   onNotify: (message: string) => void;
+  onPullFromSheets?: () => Promise<void>;
+  isPullingSheets?: boolean;
 }
 
 interface ServerLog {
@@ -68,6 +71,8 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
   autoSync,
   onToggleAutoSync,
   onNotify,
+  onPullFromSheets,
+  isPullingSheets = false,
 }) => {
   const [localUrl, setLocalUrl] = useState(webhookUrl);
   const [activeTab, setActiveTab] = useState<'config' | 'guide' | 'logs'>('config');
@@ -500,6 +505,32 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
                   />
                   <div className="w-11 h-6 bg-[#333] peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
                 </label>
+              </div>
+
+              {/* Google Sheets Pull Section */}
+              <div className="p-3.5 bg-[#171717] border border-[#2a2a2a] rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>ดึงข้อมูลจาก Google Sheets</span>
+                    <span className="px-1.5 py-0.5 text-[10px] bg-emerald-950 text-emerald-300 rounded border border-emerald-800">
+                      อัตโนมัติทุกครั้งที่เปิดเวป
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#888]">
+                    ระบบจะดึงข้อมูลหม้อแปลงล่าสุดและจุดจัดวางจาก Google Sheets ทุกครั้งที่เปิดหน้าเวป
+                  </p>
+                </div>
+                {onPullFromSheets && (
+                  <button
+                    onClick={() => onPullFromSheets()}
+                    disabled={isPullingSheets}
+                    className="flex items-center justify-center gap-1.5 py-2 px-3.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg shadow-xs transition-all disabled:opacity-50 shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isPullingSheets ? 'animate-spin' : ''}`} />
+                    <span>{isPullingSheets ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลล่าสุดเดี๋ยวนี้'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Sync Action Buttons */}

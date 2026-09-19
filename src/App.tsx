@@ -14,8 +14,8 @@ import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { WebhookModal } from './components/WebhookModal';
 import { MoveConfirmationModal } from './components/MoveConfirmationModal';
 import { GoogleScriptEmbedView } from './components/GoogleScriptEmbedView';
-import { buildWebhookPayload, sendWebhook, DEFAULT_WEBHOOK_URL } from './services/webhookService';
-import { cleanBrandToEnglish } from './utils/customOptions';
+import { buildWebhookPayload, sendWebhook, DEFAULT_WEBHOOK_URL, fetchTransformersFromSheets } from './services/webhookService';
+import { cleanBrandToEnglish, normalizePeaNo } from './utils/customOptions';
 import { initAuth, User } from './lib/googleAuth';
 import {
   Plus,
@@ -27,7 +27,9 @@ import {
   List,
   Zap,
   Info,
-  ExternalLink
+  ExternalLink,
+  RefreshCw,
+  CloudDownload
 } from 'lucide-react';
 
 const STORAGE_KEY_TRANSFORMERS = 'pea_warehouse_transformers_v1';
@@ -43,9 +45,10 @@ export default function App() {
       if (saved) {
         const parsed: Transformer[] = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          // Normalize any existing brand to pure English
+          // Normalize any existing brand to pure English and PEA to TR prefix
           return parsed.map((t) => ({
             ...t,
+            peaNo: normalizePeaNo(t.peaNo),
             brand: cleanBrandToEnglish(t.brand || '')
           }));
         }
@@ -53,7 +56,11 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to load from localStorage', e);
     }
-    return INITIAL_TRANSFORMERS;
+    return INITIAL_TRANSFORMERS.map((t) => ({
+      ...t,
+      peaNo: normalizePeaNo(t.peaNo),
+      brand: cleanBrandToEnglish(t.brand || '')
+    }));
   });
 
   // 2. State: Warehouse Grid Config (columns x rows)
@@ -143,6 +150,8 @@ export default function App() {
 
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [isPullingSheets, setIsPullingSheets] = useState<boolean>(false);
+  const isSyncingFromRemoteRef = React.useRef(false);
 
   const handleSaveWebhookUrl = (url: string) => {
     setWebhookUrl(url);
@@ -163,11 +172,66 @@ export default function App() {
     showNotification(enabled ? 'เปิดการส่งข้อมูล Webhook อัตโนมัติแล้ว' : 'ปิดการส่งข้อมูล Webhook อัตโนมัติ');
   };
 
-  // Debounced auto-sync webhook on changes
+  /**
+   * Pulls transformers data directly from Google Sheets / Webhook.
+   * Runs automatically every time the web page is opened.
+   */
+  const handlePullFromSheets = async (isAuto = false) => {
+    setIsPullingSheets(true);
+    setSyncStatus('syncing');
+    try {
+      const res = await fetchTransformersFromSheets({
+        webhookUrl: webhookUrl || DEFAULT_WEBHOOK_URL,
+      });
+      if (res.success && res.transformers && res.transformers.length > 0) {
+        isSyncingFromRemoteRef.current = true;
+        setTransformers(res.transformers);
+        try {
+          localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(res.transformers));
+        } catch (e) {
+          console.warn('Failed to save pulled transformers to localStorage', e);
+        }
+        setSyncStatus('synced');
+        const nowTime = new Date().toLocaleTimeString('th-TH');
+        setLastSyncTime(nowTime);
+        showNotification(
+          isAuto
+            ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${res.transformers.length} เครื่อง)`
+            : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${res.transformers.length} เครื่อง)`
+        );
+      } else if (!isAuto) {
+        setSyncStatus('error');
+        showNotification(res.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้');
+      } else {
+        setSyncStatus('idle');
+      }
+    } catch (err: any) {
+      console.warn('Pull from sheets failed:', err);
+      if (!isAuto) {
+        setSyncStatus('error');
+        showNotification('เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheets');
+      } else {
+        setSyncStatus('idle');
+      }
+    } finally {
+      setIsPullingSheets(false);
+    }
+  };
+
+  // Pull data from Google Sheets EVERY TIME the web page is opened!
+  useEffect(() => {
+    handlePullFromSheets(true);
+  }, []);
+
+  // Debounced auto-sync webhook on changes (outbound push)
   const isInitialMount = React.useRef(true);
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
+      return;
+    }
+    if (isSyncingFromRemoteRef.current) {
+      isSyncingFromRemoteRef.current = false;
       return;
     }
     if (autoSyncWebhook && webhookUrl && webhookUrl.trim()) {
@@ -227,7 +291,9 @@ export default function App() {
       // Query search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchesPea = t.peaNo.toLowerCase().includes(q);
+        const matchesPea =
+          t.peaNo.toLowerCase().includes(q) ||
+          t.peaNo.replace(/^TR[\s-_]*/i, '').toLowerCase().includes(q);
         const matchesSn = t.serialNo.toLowerCase().includes(q);
         const matchesBrand = t.brand.toLowerCase().includes(q);
         const matchesKva = String(t.capacityKva).includes(q);
@@ -666,6 +732,25 @@ export default function App() {
               </button>
             </div>
 
+            {/* Pull from Google Sheets Button */}
+            <button
+              onClick={() => handlePullFromSheets(false)}
+              disabled={isPullingSheets}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all border ${
+                isPullingSheets
+                  ? 'bg-amber-950/50 text-amber-300 border-amber-600/70 cursor-wait'
+                  : 'bg-[#1a1a1a] text-[#e5e5e5] border-[#333] hover:bg-[#252525] hover:border-emerald-600/60 hover:text-emerald-300'
+              }`}
+              title="ดึงข้อมูลล่าสุดจาก Google Sheets (ระบบจะดึงให้อัตโนมัติทุกครั้งที่เปิดเวป หรือกดเพื่อดึงทันที)"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-emerald-400 ${
+                  isPullingSheets ? 'animate-spin text-amber-400' : ''
+                }`}
+              />
+              <span>{isPullingSheets ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลจาก Sheets'}</span>
+            </button>
+
             {/* Google Sheets Integration & Live Status */}
             <button
               onClick={() => setIsWebhookModalOpen(true)}
@@ -732,6 +817,23 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Auto-pulling from Sheets status banner */}
+      {isPullingSheets && (
+        <div className="bg-emerald-950/70 border-b border-emerald-700/50 text-emerald-200 text-xs py-2 px-4 shadow-sm animate-in fade-in duration-200">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400 shrink-0" />
+              <span className="font-semibold">
+                กำลังดึงข้อมูลล่าสุดจาก Google Sheets (ทำงานอัตโนมัติทุกครั้งที่เปิดเวป)...
+              </span>
+            </div>
+            <span className="text-[11px] text-emerald-400/80 font-mono hidden sm:inline">
+              ซิงค์รหัส TR และตำแหน่งจุดวางหม้อแปลง
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Floating Notification Toast */}
       {notification && (
@@ -888,6 +990,8 @@ export default function App() {
         autoSync={autoSyncWebhook}
         onToggleAutoSync={handleToggleAutoSync}
         onNotify={showNotification}
+        onPullFromSheets={() => handlePullFromSheets(false)}
+        isPullingSheets={isPullingSheets}
       />
 
       <GoogleSheetsModal

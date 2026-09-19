@@ -44,6 +44,336 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+  // Sheets Pull Endpoint:
+  // Pulls transformers directly from Google Sheets or Google Apps Script Webhook
+  app.all('/api/sheets-pull', async (req, res) => {
+    const webhookUrl = (req.body?.webhookUrl || req.query?.webhookUrl || '') as string;
+    let spreadsheetId = (req.body?.spreadsheetId || req.query?.spreadsheetId || '') as string;
+
+    // Helper to normalize PEA number so that TR is always in front of the number
+    function normalizePeaNo(pea: string): string {
+      if (!pea) return '';
+      const trimmed = pea.trim();
+      if (!trimmed) return '';
+      if (/^PEA[\s-_]*TR[\s-_]*/i.test(trimmed)) {
+        const numPart = trimmed.replace(/^PEA[\s-_]*TR[\s-_]*/i, '').trim();
+        return `TR ${numPart}`;
+      }
+      if (/^TR[\s-_]*/i.test(trimmed)) {
+        const numPart = trimmed.replace(/^TR[\s-_]*/i, '').trim();
+        return `TR ${numPart}`;
+      }
+      if (/^PEA[\s-_]*/i.test(trimmed)) {
+        const numPart = trimmed.replace(/^PEA[\s-_]*/i, '').trim();
+        return `TR ${numPart}`;
+      }
+      return `TR ${trimmed}`;
+    }
+
+    // Helper to clean brand name into English
+    function cleanBrandToEnglish(brandName: string): string {
+      if (!brandName) return 'Other';
+      const match = brandName.match(/\(([^)]+)\)/);
+      if (match && match[1]) return match[1].trim();
+      const mapping: Record<string, string> = {
+        'เอกรัฐ': 'Ekarat',
+        'ถิรไทย': 'Tirathai',
+        'เจริญชัย': 'Charoenchai',
+        'พรีไซซ': 'Precise',
+        'คิวทีซี': 'QTC',
+        'เอเชีย แทรฟโฟ': 'Asia Trafo',
+        'หม้อแปลงไทย': 'Thai Trafo',
+        'บางกอกเทรโฟ': 'Bangkok Trafo',
+        'เอบีบี': 'ABB',
+        'ชไนเดอร์': 'Schneider',
+        'ซีเมนส์': 'Siemens',
+        'อื่นๆ': 'Other',
+      };
+      for (const [thai, eng] of Object.entries(mapping)) {
+        if (brandName.includes(thai)) return eng;
+      }
+      const stripped = brandName.replace(/[\u0E00-\u0E7F]+/g, '').trim();
+      return stripped || brandName;
+    }
+
+    function parseCsvLine(line: string): string[] {
+      const result: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          result.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      result.push(cur.trim());
+      return result;
+    }
+
+    try {
+      // 1. If spreadsheetId is directly a Google Sheets URL or ID, extract it
+      if (spreadsheetId) {
+        const match = spreadsheetId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (match && match[1]) {
+          spreadsheetId = match[1];
+        }
+      }
+
+      // 2. If no spreadsheetId yet, check webhookUrl or default webhook
+      const targetWebhookUrl =
+        (webhookUrl && webhookUrl.trim()) ||
+        'https://script.google.com/macros/s/AKfycbytQFoURJi_gnFC8-c_1gzdBJ1aUJ2aqrzqeRDX1I_dXrYd_pxMv2um0yCgxic5CF6Y/exec';
+
+      // If we don't have a spreadsheetId, ping Webhook with GET to get spreadsheetUrl or transformers
+      if (!spreadsheetId && targetWebhookUrl) {
+        try {
+          const webhookResp = await fetch(targetWebhookUrl, { method: 'GET', redirect: 'follow' });
+          if (webhookResp.ok) {
+            const webhookText = await webhookResp.text();
+            try {
+              const webhookData = JSON.parse(webhookText);
+              // If webhook directly returned transformers array
+              if (
+                webhookData.transformers &&
+                Array.isArray(webhookData.transformers) &&
+                webhookData.transformers.length > 0
+              ) {
+                const mapped = webhookData.transformers.map((t: any, idx: number) => ({
+                  id: `sheet-${Date.now()}-${idx}`,
+                  peaNo: normalizePeaNo(t.peaNo),
+                  serialNo: t.serialNo || `SN-${idx + 1}`,
+                  brand: cleanBrandToEnglish(t.brand || 'Other'),
+                  capacityKva: Number(t.capacityKva) || 50,
+                  phase: t.phase && String(t.phase).includes('1') ? '1-Phase' : '3-Phase',
+                  voltage: t.voltage || '22 kV / 400-230 V',
+                  status:
+                    t.status === 'damaged' || (t.status && t.status.includes('ชำรุด'))
+                      ? 'damaged'
+                      : t.status === 'major_repair' || (t.status && t.status.includes('หนัก'))
+                      ? 'major_repair'
+                      : t.status === 'minor_repair' || (t.status && t.status.includes('เล็กน้อย'))
+                      ? 'minor_repair'
+                      : 'good',
+                  slotNumber:
+                    typeof t.slotNumber === 'number'
+                      ? t.slotNumber
+                      : typeof t.slot === 'number'
+                      ? t.slot
+                      : null,
+                  locationType: t.locationType || (t.slotNumber ? 'grid' : 'holding'),
+                  notes: t.notes || '',
+                  receivedDate: t.receivedDate || new Date().toISOString().split('T')[0],
+                  updatedAt: t.updatedAt || new Date().toISOString().split('T')[0],
+                }));
+
+                addWebhookLog({
+                  url: targetWebhookUrl,
+                  method: 'GET (Sheets Pull)',
+                  status: 200,
+                  statusText: 'OK',
+                  success: true,
+                  message: `ดึงข้อมูลจาก Apps Script สำเร็จ (${mapped.length} เครื่อง)`,
+                  payloadSummary: `ดึงข้อมูลหม้อแปลง ${mapped.length} เครื่อง`,
+                });
+
+                return res.json({
+                  success: true,
+                  count: mapped.length,
+                  transformers: mapped,
+                  source: 'webhook_json',
+                  timestamp: new Date().toLocaleTimeString('th-TH'),
+                });
+              }
+
+              if (webhookData.spreadsheetUrl) {
+                const match = webhookData.spreadsheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+                if (match && match[1]) {
+                  spreadsheetId = match[1];
+                }
+              }
+            } catch {
+              // Ignore json parse error and continue
+            }
+          }
+        } catch (webhookErr) {
+          console.warn('[Sheets-Pull] Webhook GET ping warning:', webhookErr);
+        }
+      }
+
+      // Default fallback spreadsheet ID
+      if (!spreadsheetId) {
+        spreadsheetId = '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco';
+      }
+
+      // 3. Fetch CSV from Google Sheets via Google Visualization API (GViz)
+      // Try sheet tabs: "ข้อมูลหม้อแปลง", "ข้อมูลหม้อแปลงทั้งหมด", "Sheet1"
+      const candidateSheets = ['ข้อมูลหม้อแปลง', 'ข้อมูลหม้อแปลงทั้งหมด', 'Sheet1'];
+      let csvText = '';
+      let usedSheetName = '';
+
+      for (const sName of candidateSheets) {
+        try {
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
+            sName
+          )}`;
+          const gvizResp = await fetch(gvizUrl, { redirect: 'follow' });
+          if (gvizResp.ok) {
+            const txt = await gvizResp.text();
+            if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
+              csvText = txt;
+              usedSheetName = sName;
+              break;
+            }
+          }
+        } catch (sheetErr) {
+          console.warn(`[Sheets-Pull] Failed tab ${sName}:`, sheetErr);
+        }
+      }
+
+      if (!csvText) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่สามารถดึงข้อมูล CSV จาก Google Sheets ได้ (กรุณาตรวจสอบว่าแชร์ชีต หรือเปิดการเข้าถึง)',
+        });
+      }
+
+      const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length <= 1) {
+        return res.json({
+          success: true,
+          count: 0,
+          transformers: [],
+          message: 'แผ่นงานใน Google Sheets ยังไม่มีข้อมูลหม้อแปลง',
+        });
+      }
+
+      const dataRows = lines.slice(1);
+      const parsedTransformers: any[] = [];
+
+      dataRows.forEach((line, idx) => {
+        const row = parseCsvLine(line);
+        if (!row || row.length < 2) return;
+
+        const rawPeaNo = row[1] || '';
+        if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.') return;
+
+        const peaNo = normalizePeaNo(rawPeaNo);
+        const serialNo = row[2] || `SN-${idx + 1}`;
+        const brand = cleanBrandToEnglish(row[3] || 'Other');
+        const capacityKva = parseInt((row[4] || '50').replace(/[^0-9]/g, ''), 10) || 50;
+        const phaseStr = (row[5] || '').toLowerCase();
+        const phase = phaseStr.includes('1') ? '1-Phase' : '3-Phase';
+        const voltage = row[6] || '22 kV / 400-230 V';
+
+        // Parse status
+        const statusStr = (row[7] || '').toLowerCase();
+        let status: 'good' | 'minor_repair' | 'major_repair' | 'damaged' = 'good';
+        if (statusStr.includes('ชำรุด') || statusStr.includes('damaged') || statusStr.includes('แดง')) {
+          status = 'damaged';
+        } else if (statusStr.includes('หนัก') || statusStr.includes('major') || statusStr.includes('ส้ม')) {
+          status = 'major_repair';
+        } else if (statusStr.includes('เล็กน้อย') || statusStr.includes('minor') || statusStr.includes('เหลือง')) {
+          status = 'minor_repair';
+        } else {
+          status = 'good';
+        }
+
+        // Parse location & slot
+        const locationStr = row[8] || '';
+        let slotNumber: number | null = null;
+        let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
+
+        if (locationStr.includes('คัดแยก') || locationStr.includes('triage')) {
+          locationType = 'triage';
+          slotNumber = null;
+        } else if (
+          locationStr.includes('ส่งซ่อม') ||
+          locationStr.includes('repair') ||
+          locationStr.includes('โรงงาน')
+        ) {
+          locationType = 'repair';
+          slotNumber = null;
+        } else if (
+          locationStr.includes('รอขาย') ||
+          locationStr.includes('sale') ||
+          locationStr.includes('ประมูล')
+        ) {
+          locationType = 'sale';
+          slotNumber = null;
+        } else if (locationStr.includes('พักรอ') || locationStr.includes('holding')) {
+          locationType = 'holding';
+          slotNumber = null;
+        } else {
+          const match = locationStr.match(/\b([0-9]{1,3})\b/);
+          if (match && match[1]) {
+            slotNumber = parseInt(match[1], 10);
+            locationType = 'grid';
+          } else {
+            slotNumber = null;
+            locationType = 'holding';
+          }
+        }
+
+        const receivedDate = row[9] || new Date().toISOString().split('T')[0];
+        const updatedAt = row[10] || new Date().toISOString().split('T')[0];
+        const notes = row[11] || '';
+
+        parsedTransformers.push({
+          id: `tr-sheet-${idx + 1}`,
+          peaNo,
+          serialNo,
+          brand,
+          capacityKva,
+          phase,
+          voltage,
+          status,
+          slotNumber,
+          locationType,
+          receivedDate,
+          updatedAt,
+          notes,
+        });
+      });
+
+      addWebhookLog({
+        url: `Google Sheet (${spreadsheetId}) [${usedSheetName}]`,
+        method: 'GET (Sheets Pull)',
+        status: 200,
+        statusText: 'OK',
+        success: true,
+        message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${parsedTransformers.length} เครื่อง)`,
+        payloadSummary: `ดึงข้อมูล ${parsedTransformers.length} เครื่อง จากแผ่นงาน ${usedSheetName}`,
+      });
+
+      return res.json({
+        success: true,
+        count: parsedTransformers.length,
+        transformers: parsedTransformers,
+        spreadsheetId,
+        sheetName: usedSheetName,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        timestamp: new Date().toLocaleTimeString('th-TH'),
+        message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${parsedTransformers.length} เครื่อง)`,
+      });
+    } catch (err: any) {
+      console.error('[Sheets-Pull Error]:', err);
+      return res.status(500).json({
+        success: false,
+        message: `เกิดข้อผิดพลาดในการดึงข้อมูล: ${err.message}`,
+      });
+    }
+  });
+
   // API Health Check
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });

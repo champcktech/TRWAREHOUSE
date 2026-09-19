@@ -1,5 +1,5 @@
 import { Transformer, WarehouseConfig, STATUS_CONFIG } from '../types';
-import { cleanBrandToEnglish } from '../utils/customOptions';
+import { cleanBrandToEnglish, normalizePeaNo } from '../utils/customOptions';
 
 /**
  * Default embedded Webhook URL for Google Sheets integration
@@ -365,6 +365,63 @@ export async function sendWebhook(
         advice: 'ตรวจสอบว่า Apps Script ตั้งค่า "ผู้มีสิทธิ์เข้าถึง (Who has access)" เป็น "ทุกคน (Anyone)" และคัดลอก URL ที่ลงท้ายด้วย /exec',
       };
     }
+  }
+}
+
+/**
+ * Fetches transformers directly from Google Sheets / Webhook via server-side proxy
+ * Automatically normalizes PEA numbers to include "TR " prefix in front of transformer number.
+ */
+export async function fetchTransformersFromSheets(options?: {
+  webhookUrl?: string;
+  spreadsheetId?: string;
+}): Promise<{
+  success: boolean;
+  transformers: Transformer[];
+  message: string;
+  spreadsheetId?: string;
+  spreadsheetUrl?: string;
+  timestamp?: string;
+}> {
+  try {
+    const res = await fetch('/api/sheets-pull', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        webhookUrl: options?.webhookUrl || DEFAULT_WEBHOOK_URL,
+        spreadsheetId: options?.spreadsheetId || '',
+      }),
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.message || `Server error (${res.status})`);
+    }
+
+    const data = await res.json();
+    const mappedTransformers: Transformer[] = (data.transformers || []).map((t: any) => ({
+      ...t,
+      peaNo: normalizePeaNo(t.peaNo),
+      brand: cleanBrandToEnglish(t.brand || 'Other'),
+    }));
+
+    return {
+      success: !!data.success,
+      transformers: mappedTransformers,
+      message: data.message || `ดึงข้อมูลสำเร็จ ${mappedTransformers.length} เครื่อง`,
+      spreadsheetId: data.spreadsheetId,
+      spreadsheetUrl: data.spreadsheetUrl,
+      timestamp: data.timestamp,
+    };
+  } catch (error: any) {
+    console.error('Error fetching transformers from sheets:', error);
+    return {
+      success: false,
+      transformers: [],
+      message: error.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้',
+    };
   }
 }
 

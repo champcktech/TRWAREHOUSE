@@ -13,7 +13,8 @@ import {
   addCustomCapacity,
   getStoredBrands,
   addCustomBrand,
-  cleanBrandToEnglish
+  cleanBrandToEnglish,
+  normalizePeaNo
 } from '../utils/customOptions';
 
 interface TransformerFormModalProps {
@@ -245,7 +246,7 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
 
     const updated: Transformer = {
       id: initialData ? initialData.id : `tr-${Date.now()}`,
-      peaNo: peaNo.trim().startsWith('PEA') ? peaNo.trim() : `PEA ${peaNo.trim()}`,
+      peaNo: normalizePeaNo(peaNo.trim()),
       serialNo: serialNo.trim(),
       capacityKva: Number(capacityKva),
       phase,
@@ -337,16 +338,19 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
             {/* PEA Code */}
             <div>
               <label className="block text-xs font-semibold text-[#aaa] mb-1">
-                รหัส PEA (ทรัพย์สิน กฟภ.) *
+                รหัส PEA No. (ขึ้นต้นด้วย TR) *
               </label>
               <input
                 type="text"
                 required
                 value={peaNo}
                 onChange={(e) => setPeaNo(e.target.value)}
-                placeholder="เช่น 51-002341"
-                className="w-full px-3 py-2 bg-[#141414] border border-[#2a2a2a] rounded-lg text-sm text-[#e5e5e5] placeholder-[#555] focus:outline-hidden focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                placeholder="เช่น TR 51-002341 หรือ 51-002341"
+                className="w-full px-3 py-2 bg-[#141414] border border-[#2a2a2a] rounded-lg text-sm text-[#e5e5e5] placeholder-[#555] focus:outline-hidden focus:border-orange-500 focus:ring-1 focus:ring-orange-500 font-mono"
               />
+              <span className="text-[11px] text-[#777] mt-0.5 block">
+                ระบบจะจัดรูปแบบให้มี "TR " หน้าเลขหม้อแปลงให้อัตโนมัติ
+              </span>
             </div>
 
             {/* Serial Number (Sn) */}

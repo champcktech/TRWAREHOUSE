@@ -1,6 +1,6 @@
 import React from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG, WarehouseZoneId } from '../types';
-import { cleanBrandToEnglish } from '../utils/customOptions';
+import { cleanBrandToEnglish, normalizePeaNo } from '../utils/customOptions';
 import { Edit2, Trash2, MapPin, Truck, Tag } from 'lucide-react';
 
 interface TransformerTableViewProps {
@@ -124,7 +124,7 @@ export const TransformerTableView: React.FC<TransformerTableViewProps> = ({
                       )}
                     </td>
                     <td className="py-2.5 px-3 font-bold font-mono text-white">
-                      {t.peaNo}
+                      {normalizePeaNo(t.peaNo)}
                     </td>
                     <td className="py-2.5 px-3 text-[#888] font-mono">
                       {t.serialNo}

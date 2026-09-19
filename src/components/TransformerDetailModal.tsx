@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transformer, WarehouseConfig, STATUS_CONFIG, WarehouseZoneId, TransformerLocationType } from '../types';
-import { cleanBrandToEnglish } from '../utils/customOptions';
+import { cleanBrandToEnglish, normalizePeaNo } from '../utils/customOptions';
 import { TransformerTriangle } from './TransformerTriangle';
 import { X, Edit2, Trash2, ArrowRightLeft, Calendar, Tag, Zap, Cpu, AlertTriangle, Truck, Wrench } from 'lucide-react';
 
@@ -125,7 +125,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
               </div>
 
               <h2 className="text-xl font-bold font-mono text-white truncate">
-                {transformer.peaNo}
+                {normalizePeaNo(transformer.peaNo)}
               </h2>
               <p className="text-xs text-[#888] font-mono mt-0.5">
                 S/N: {transformer.serialNo}
@@ -169,7 +169,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
                       );
                       return (
                         <option key={`left-${s}`} value={`left-${s}`}>
-                          {gridPrefix} {String(s).padStart(2, '0')} {occ ? `(มี ${occ.peaNo})` : '(ว่าง)'}
+                          {gridPrefix} {String(s).padStart(2, '0')} {occ ? `(มี ${normalizePeaNo(occ.peaNo)})` : '(ว่าง)'}
                         </option>
                       );
                     })}
