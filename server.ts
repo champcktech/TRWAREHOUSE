@@ -129,15 +129,27 @@ async function startServer() {
         }
       }
 
+      // 1b. If webhookUrl is actually a Google Sheets URL, extract spreadsheetId directly
+      if (!spreadsheetId && webhookUrl && webhookUrl.includes('docs.google.com/spreadsheets')) {
+        const match = webhookUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+        if (match && match[1]) {
+          spreadsheetId = match[1];
+        }
+      }
+
       // 2. If no spreadsheetId yet, check webhookUrl or default webhook
       const targetWebhookUrl =
-        (webhookUrl && webhookUrl.trim()) ||
+        (webhookUrl && !webhookUrl.includes('docs.google.com/spreadsheets') && webhookUrl.trim()) ||
         'https://script.google.com/macros/s/AKfycbytQFoURJi_gnFC8-c_1gzdBJ1aUJ2aqrzqeRDX1I_dXrYd_pxMv2um0yCgxic5CF6Y/exec';
 
-      // If we don't have a spreadsheetId, ping Webhook with GET to get spreadsheetUrl or transformers
+      // If we don't have a spreadsheetId, ping Webhook with GET (with 4-second timeout to avoid hanging)
       if (!spreadsheetId && targetWebhookUrl) {
         try {
-          const webhookResp = await fetch(targetWebhookUrl, { method: 'GET', redirect: 'follow' });
+          const webhookResp = await fetch(targetWebhookUrl, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: AbortSignal.timeout(4000),
+          });
           if (webhookResp.ok) {
             const webhookText = await webhookResp.text();
             try {
@@ -157,12 +169,12 @@ async function startServer() {
                   phase: t.phase && String(t.phase).includes('1') ? '1-Phase' : '3-Phase',
                   voltage: t.voltage || '22 kV / 400-230 V',
                   status:
-                    t.status === 'damaged' || (t.status && t.status.includes('ชำรุด'))
-                      ? 'damaged'
-                      : t.status === 'major_repair' || (t.status && t.status.includes('หนัก'))
-                      ? 'major_repair'
-                      : t.status === 'minor_repair' || (t.status && t.status.includes('เล็กน้อย'))
+                    t.status === 'minor_repair' || (t.status && (t.status.includes('เล็กน้อย') || t.status.includes('minor')))
                       ? 'minor_repair'
+                      : t.status === 'major_repair' || (t.status && (t.status.includes('หนัก') || t.status.includes('major')))
+                      ? 'major_repair'
+                      : t.status === 'damaged' || (t.status && (t.status.includes('ชำรุด') || t.status.includes('ซาก') || t.status.includes('จำหน่าย')))
+                      ? 'damaged'
                       : 'good',
                   slotNumber:
                     typeof t.slotNumber === 'number'
@@ -216,17 +228,37 @@ async function startServer() {
       }
 
       // 3. Fetch CSV from Google Sheets via Google Visualization API (GViz)
-      // Try sheet tabs: "ข้อมูลหม้อแปลง", "ข้อมูลหม้อแปลงทั้งหมด", "Sheet1"
-      const candidateSheets = ['ข้อมูลหม้อแปลง', 'ข้อมูลหม้อแปลงทั้งหมด', 'Sheet1'];
+      // Try sheet tabs: Thai & English common names
+      const candidateSheets = [
+        'ข้อมูลหม้อแปลง',
+        'ข้อมูลหม้อแปลงทั้งหมด',
+        'แผ่นงาน1',
+        'แผ่นงาน 1',
+        'Sheet1',
+        'Sheet 1',
+        'หม้อแปลง',
+        'หม้อแปลงไฟฟ้า',
+        'คลังหม้อแปลง',
+        'Data',
+      ];
       let csvText = '';
       let usedSheetName = '';
 
       for (const sName of candidateSheets) {
         try {
-          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(
+          // Add cachebuster to prevent Google from returning stale cached data
+          const cacheBuster = Date.now();
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&sheet=${encodeURIComponent(
             sName
-          )}`;
-          const gvizResp = await fetch(gvizUrl, { redirect: 'follow' });
+          )}&_=${cacheBuster}`;
+          const gvizResp = await fetch(gvizUrl, {
+            redirect: 'follow',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              Pragma: 'no-cache',
+            },
+            signal: AbortSignal.timeout(5000),
+          });
           if (gvizResp.ok) {
             const txt = await gvizResp.text();
             if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
@@ -240,10 +272,35 @@ async function startServer() {
         }
       }
 
+      // If specific tab names failed, try querying default sheet without &sheet= param
+      if (!csvText) {
+        try {
+          const cacheBuster = Date.now();
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&_=${cacheBuster}`;
+          const gvizResp = await fetch(gvizUrl, {
+            redirect: 'follow',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              Pragma: 'no-cache',
+            },
+            signal: AbortSignal.timeout(5000),
+          });
+          if (gvizResp.ok) {
+            const txt = await gvizResp.text();
+            if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
+              csvText = txt;
+              usedSheetName = 'DefaultSheet';
+            }
+          }
+        } catch (sheetErr) {
+          console.warn('[Sheets-Pull] Failed default tab fetch:', sheetErr);
+        }
+      }
+
       if (!csvText) {
         return res.status(404).json({
           success: false,
-          message: 'ไม่สามารถดึงข้อมูล CSV จาก Google Sheets ได้ (กรุณาตรวจสอบว่าแชร์ชีต หรือเปิดการเข้าถึง)',
+          message: 'ไม่สามารถดึงข้อมูล CSV จาก Google Sheets ได้ (กรุณาตรวจสอบว่าแชร์ชีต หรือเปิดการเข้าถึง "ทุกคนที่มีลิงก์มีสิทธิ์อ่าน")',
         });
       }
 
@@ -253,9 +310,68 @@ async function startServer() {
           success: true,
           count: 0,
           transformers: [],
-          message: 'แผ่นงานใน Google Sheets ยังไม่มีข้อมูลหม้อแปลง',
+          spreadsheetId,
+          sheetName: usedSheetName,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+          timestamp: new Date().toLocaleTimeString('th-TH'),
+          message: 'แผ่นงานใน Google Sheets ยังไม่มีข้อมูลหม้อแปลง (พร้อมรับข้อมูลใหม่)',
         });
       }
+
+      // Dynamic header mapping from Row 0 to support any column ordering or missing "ลำดับ" column
+      const headerRow = parseCsvLine(lines[0]).map((h) => (h || '').trim().toLowerCase());
+      let peaCol = -1;
+      let snCol = -1;
+      let brandCol = -1;
+      let kvaCol = -1;
+      let phaseCol = -1;
+      let voltCol = -1;
+      let statusCol = -1;
+      let locationCol = -1;
+      let dateCol = -1;
+      let updateCol = -1;
+      let notesCol = -1;
+
+      headerRow.forEach((h, idx) => {
+        if (h.includes('pea') || h.includes('รหัส') || h.includes('หมายเลข')) {
+          if (peaCol === -1) peaCol = idx;
+        } else if (h.includes('serial') || h.includes('s/n') || h.includes('sn') || h.includes('ซีเรียล')) {
+          if (snCol === -1) snCol = idx;
+        } else if (h.includes('ยี่ห้อ') || h.includes('brand') || h.includes('ผู้ผลิต')) {
+          if (brandCol === -1) brandCol = idx;
+        } else if (h.includes('kva') || h.includes('ขนาด') || h.includes('กำลัง')) {
+          if (kvaCol === -1) kvaCol = idx;
+        } else if (h.includes('เฟส') || h.includes('phase')) {
+          if (phaseCol === -1) phaseCol = idx;
+        } else if (h.includes('แรงดัน') || h.includes('volt') || h.includes('kv')) {
+          if (voltCol === -1) voltCol = idx;
+        } else if (h.includes('สถานะ') || h.includes('status') || h.includes('สภาพ')) {
+          if (statusCol === -1) statusCol = idx;
+        } else if (h.includes('ตำแหน่ง') || h.includes('location') || h.includes('ช่อง') || h.includes('โซน')) {
+          if (locationCol === -1) locationCol = idx;
+        } else if (h.includes('รับเข้า') || h.includes('date') || h.includes('วันที่')) {
+          if (dateCol === -1) dateCol = idx;
+        } else if (h.includes('อัปเดต') || h.includes('แก้ไข') || h.includes('update')) {
+          if (updateCol === -1) updateCol = idx;
+        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark') || h.includes('รายละเอียด')) {
+          if (notesCol === -1) notesCol = idx;
+        }
+      });
+
+      // Fallback indices if header names didn't match
+      const hasOrderCol = headerRow[0]?.includes('ลำดับ') || headerRow[0]?.includes('no') || headerRow[0] === '#';
+      const offset = hasOrderCol ? 1 : 0;
+      if (peaCol === -1) peaCol = offset;
+      if (snCol === -1) snCol = offset + 1;
+      if (brandCol === -1) brandCol = offset + 2;
+      if (kvaCol === -1) kvaCol = offset + 3;
+      if (phaseCol === -1) phaseCol = offset + 4;
+      if (voltCol === -1) voltCol = offset + 5;
+      if (statusCol === -1) statusCol = offset + 6;
+      if (locationCol === -1) locationCol = offset + 7;
+      if (dateCol === -1) dateCol = offset + 8;
+      if (updateCol === -1) updateCol = offset + 9;
+      if (notesCol === -1) notesCol = offset + 10;
 
       const dataRows = lines.slice(1);
       const parsedTransformers: any[] = [];
@@ -264,32 +380,50 @@ async function startServer() {
         const row = parseCsvLine(line);
         if (!row || row.length < 2) return;
 
-        const rawPeaNo = row[1] || '';
-        if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.') return;
+        const rawPeaNo = (row[peaCol] || '').trim();
+        if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.' || rawPeaNo.toLowerCase() === 'pea no.') return;
 
         const peaNo = normalizePeaNo(rawPeaNo);
-        const serialNo = row[2] || `SN-${idx + 1}`;
-        const brand = cleanBrandToEnglish(row[3] || 'Other');
-        const capacityKva = parseInt((row[4] || '50').replace(/[^0-9]/g, ''), 10) || 50;
-        const phaseStr = (row[5] || '').toLowerCase();
+        const serialNo = (row[snCol] || `SN-${idx + 1}`).trim();
+        const brand = cleanBrandToEnglish(row[brandCol] || 'Other');
+        const capacityKva = parseInt(((row[kvaCol] || '50').replace(/[^0-9]/g, '')), 10) || 50;
+        const phaseStr = (row[phaseCol] || '').toLowerCase();
         const phase = phaseStr.includes('1') ? '1-Phase' : '3-Phase';
-        const voltage = row[6] || '22 kV / 400-230 V';
+        const voltage = (row[voltCol] || '22 kV / 400-230 V').trim();
 
-        // Parse status
-        const statusStr = (row[7] || '').toLowerCase();
+        // Parse status with proper precedence (minor & major BEFORE damaged!)
+        const statusStr = (row[statusCol] || '').toLowerCase();
         let status: 'good' | 'minor_repair' | 'major_repair' | 'damaged' = 'good';
-        if (statusStr.includes('ชำรุด') || statusStr.includes('damaged') || statusStr.includes('แดง')) {
-          status = 'damaged';
-        } else if (statusStr.includes('หนัก') || statusStr.includes('major') || statusStr.includes('ส้ม')) {
-          status = 'major_repair';
-        } else if (statusStr.includes('เล็กน้อย') || statusStr.includes('minor') || statusStr.includes('เหลือง')) {
+        if (
+          statusStr.includes('เล็กน้อย') ||
+          statusStr.includes('minor') ||
+          statusStr.includes('เหลือง') ||
+          statusStr.includes('yellow')
+        ) {
           status = 'minor_repair';
+        } else if (
+          statusStr.includes('หนัก') ||
+          statusStr.includes('major') ||
+          statusStr.includes('ส้ม') ||
+          statusStr.includes('orange')
+        ) {
+          status = 'major_repair';
+        } else if (
+          statusStr.includes('ซาก') ||
+          statusStr.includes('จำหน่าย') ||
+          statusStr.includes('damaged') ||
+          statusStr.includes('แดง') ||
+          statusStr.includes('red') ||
+          statusStr.includes('ชำรุด') ||
+          statusStr.includes('เสียหาย')
+        ) {
+          status = 'damaged';
         } else {
           status = 'good';
         }
 
         // Parse location & slot
-        const locationStr = row[8] || '';
+        const locationStr = (row[locationCol] || '').trim();
         let slotNumber: number | null = null;
         let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
 
@@ -324,9 +458,9 @@ async function startServer() {
           }
         }
 
-        const receivedDate = row[9] || new Date().toISOString().split('T')[0];
-        const updatedAt = row[10] || new Date().toISOString().split('T')[0];
-        const notes = row[11] || '';
+        const receivedDate = (row[dateCol] || new Date().toISOString().split('T')[0]).trim();
+        const updatedAt = (row[updateCol] || new Date().toISOString().split('T')[0]).trim();
+        const notes = (row[notesCol] || '').trim();
 
         parsedTransformers.push({
           id: `tr-sheet-${idx + 1}`,

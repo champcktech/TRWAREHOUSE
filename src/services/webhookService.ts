@@ -383,6 +383,18 @@ export async function fetchTransformersFromSheets(options?: {
   spreadsheetUrl?: string;
   timestamp?: string;
 }> {
+  let spreadsheetId = options?.spreadsheetId || '';
+  const webhookUrl = options?.webhookUrl || DEFAULT_WEBHOOK_URL;
+
+  // If webhookUrl is a Google Sheets link, extract spreadsheetId directly
+  if (!spreadsheetId && webhookUrl && webhookUrl.includes('docs.google.com/spreadsheets')) {
+    const match = webhookUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      spreadsheetId = match[1];
+    }
+  }
+
+  // 1. Try backend proxy first
   try {
     const res = await fetch('/api/sheets-pull', {
       method: 'POST',
@@ -390,33 +402,280 @@ export async function fetchTransformersFromSheets(options?: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        webhookUrl: options?.webhookUrl || DEFAULT_WEBHOOK_URL,
-        spreadsheetId: options?.spreadsheetId || '',
+        webhookUrl,
+        spreadsheetId,
       }),
+      signal: AbortSignal.timeout(6000),
     });
 
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.message || `Server error (${res.status})`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.transformers)) {
+        const mappedTransformers: Transformer[] = data.transformers.map((t: any) => ({
+          ...t,
+          peaNo: normalizePeaNo(t.peaNo),
+          brand: cleanBrandToEnglish(t.brand || 'Other'),
+        }));
+
+        return {
+          success: true,
+          transformers: mappedTransformers,
+          message: data.message || `ดึงข้อมูลสำเร็จ ${mappedTransformers.length} เครื่อง`,
+          spreadsheetId: data.spreadsheetId,
+          spreadsheetUrl: data.spreadsheetUrl,
+          timestamp: data.timestamp,
+        };
+      }
+    }
+  } catch (backendError) {
+    console.warn('Backend /api/sheets-pull error, trying direct client GViz fallback:', backendError);
+  }
+
+  // 2. Direct Client-Side Fallback via Google Visualization API (GViz)
+  try {
+    const targetSheetId = spreadsheetId || '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco';
+    const candidateSheets = [
+      'ข้อมูลหม้อแปลง',
+      'ข้อมูลหม้อแปลงทั้งหมด',
+      'แผ่นงาน1',
+      'แผ่นงาน 1',
+      'Sheet1',
+      'Sheet 1',
+      'หม้อแปลง',
+      'หม้อแปลงไฟฟ้า',
+      'คลังหม้อแปลง',
+      'Data',
+    ];
+
+    let csvText = '';
+    const cacheBuster = Date.now();
+
+    for (const sName of candidateSheets) {
+      try {
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&sheet=${encodeURIComponent(
+          sName
+        )}&_=${cacheBuster}`;
+        const gvizResp = await fetch(gvizUrl, {
+          signal: AbortSignal.timeout(5000),
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+          },
+        });
+        if (gvizResp.ok) {
+          const txt = await gvizResp.text();
+          if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
+            csvText = txt;
+            break;
+          }
+        }
+      } catch {
+        // try next tab
+      }
     }
 
-    const data = await res.json();
-    const mappedTransformers: Transformer[] = (data.transformers || []).map((t: any) => ({
-      ...t,
-      peaNo: normalizePeaNo(t.peaNo),
-      brand: cleanBrandToEnglish(t.brand || 'Other'),
-    }));
+    if (!csvText) {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${targetSheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&_=${cacheBuster}`;
+      const gvizResp = await fetch(gvizUrl, {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
+      if (gvizResp.ok) {
+        const txt = await gvizResp.text();
+        if (txt && !txt.includes('<!DOCTYPE html>')) {
+          csvText = txt;
+        }
+      }
+    }
+
+    if (!csvText || csvText.includes('<!DOCTYPE html>')) {
+      throw new Error('Google Sheets ไม่เปิดสาธารณะ หรือต้องให้สิทธิ์เข้าถึง "ทุกคนที่มีลิงก์มีสิทธิ์อ่าน"');
+    }
+
+    // Helper for parsing CSV row
+    const parseCsvRow = (line: string): string[] => {
+      const result: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          result.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      result.push(cur.trim());
+      return result;
+    };
+
+    // Split rows safely
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length <= 1) {
+      return {
+        success: true,
+        transformers: [],
+        message: 'เชื่อมต่อ Google Sheets สำเร็จ (ยังไม่มีรายการหม้อแปลงในชีต)',
+        spreadsheetId: targetSheetId,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${targetSheetId}/edit`,
+        timestamp: new Date().toLocaleTimeString('th-TH'),
+      };
+    }
+
+    // Dynamic header indexing
+    const headerRow = parseCsvRow(lines[0]).map((h) => (h || '').trim().toLowerCase());
+    let peaCol = -1;
+    let snCol = -1;
+    let brandCol = -1;
+    let kvaCol = -1;
+    let phaseCol = -1;
+    let voltCol = -1;
+    let statusCol = -1;
+    let locationCol = -1;
+    let dateCol = -1;
+    let updateCol = -1;
+    let notesCol = -1;
+
+    headerRow.forEach((h, idx) => {
+      if (h.includes('pea') || h.includes('รหัส') || h.includes('หมายเลข')) {
+        if (peaCol === -1) peaCol = idx;
+      } else if (h.includes('serial') || h.includes('s/n') || h.includes('sn') || h.includes('ซีเรียล')) {
+        if (snCol === -1) snCol = idx;
+      } else if (h.includes('ยี่ห้อ') || h.includes('brand') || h.includes('ผู้ผลิต')) {
+        if (brandCol === -1) brandCol = idx;
+      } else if (h.includes('kva') || h.includes('ขนาด') || h.includes('กำลัง')) {
+        if (kvaCol === -1) kvaCol = idx;
+      } else if (h.includes('เฟส') || h.includes('phase')) {
+        if (phaseCol === -1) phaseCol = idx;
+      } else if (h.includes('แรงดัน') || h.includes('volt') || h.includes('kv')) {
+        if (voltCol === -1) voltCol = idx;
+      } else if (h.includes('สถานะ') || h.includes('status') || h.includes('สภาพ')) {
+        if (statusCol === -1) statusCol = idx;
+      } else if (h.includes('ตำแหน่ง') || h.includes('location') || h.includes('ช่อง') || h.includes('โซน')) {
+        if (locationCol === -1) locationCol = idx;
+      } else if (h.includes('รับเข้า') || h.includes('date') || h.includes('วันที่')) {
+        if (dateCol === -1) dateCol = idx;
+      } else if (h.includes('อัปเดต') || h.includes('แก้ไข') || h.includes('update')) {
+        if (updateCol === -1) updateCol = idx;
+      } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark') || h.includes('รายละเอียด')) {
+        if (notesCol === -1) notesCol = idx;
+      }
+    });
+
+    const hasOrderCol = headerRow[0]?.includes('ลำดับ') || headerRow[0]?.includes('no') || headerRow[0] === '#';
+    const offset = hasOrderCol ? 1 : 0;
+    if (peaCol === -1) peaCol = offset;
+    if (snCol === -1) snCol = offset + 1;
+    if (brandCol === -1) brandCol = offset + 2;
+    if (kvaCol === -1) kvaCol = offset + 3;
+    if (phaseCol === -1) phaseCol = offset + 4;
+    if (voltCol === -1) voltCol = offset + 5;
+    if (statusCol === -1) statusCol = offset + 6;
+    if (locationCol === -1) locationCol = offset + 7;
+    if (dateCol === -1) dateCol = offset + 8;
+    if (updateCol === -1) updateCol = offset + 9;
+    if (notesCol === -1) notesCol = offset + 10;
+
+    const dataRows = lines.slice(1);
+    const parsedTransformers: Transformer[] = [];
+
+    dataRows.forEach((line, idx) => {
+      const row = parseCsvRow(line);
+      if (!row || row.length < 2) return;
+      const rawPeaNo = (row[peaCol] || '').trim();
+      if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.' || rawPeaNo.toLowerCase() === 'pea no.') return;
+
+      const peaNo = normalizePeaNo(rawPeaNo);
+      const serialNo = (row[snCol] || `SN-${idx + 1}`).trim();
+      const brand = cleanBrandToEnglish(row[brandCol] || 'Other');
+      const capacityKva = parseInt(((row[kvaCol] || '50').replace(/[^0-9]/g, '')), 10) || 50;
+      const phaseStr = (row[phaseCol] || '').toLowerCase();
+      const phase = phaseStr.includes('1') ? '1-Phase' : '3-Phase';
+      const voltage = (row[voltCol] || '22 kV / 400-230 V').trim();
+
+      const statusStr = (row[statusCol] || '').toLowerCase();
+      let status: 'good' | 'minor_repair' | 'major_repair' | 'damaged' = 'good';
+      if (
+        statusStr.includes('เล็กน้อย') ||
+        statusStr.includes('minor') ||
+        statusStr.includes('เหลือง') ||
+        statusStr.includes('yellow')
+      ) {
+        status = 'minor_repair';
+      } else if (
+        statusStr.includes('หนัก') ||
+        statusStr.includes('major') ||
+        statusStr.includes('ส้ม') ||
+        statusStr.includes('orange')
+      ) {
+        status = 'major_repair';
+      } else if (
+        statusStr.includes('ซาก') ||
+        statusStr.includes('จำหน่าย') ||
+        statusStr.includes('damaged') ||
+        statusStr.includes('แดง') ||
+        statusStr.includes('red') ||
+        statusStr.includes('ชำรุด') ||
+        statusStr.includes('เสียหาย')
+      ) {
+        status = 'damaged';
+      }
+
+      const locStr = (row[locationCol] || '').trim();
+      let slotNumber: number | null = null;
+      let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
+      const slotMatch = locStr.match(/(\d+)/);
+      if (slotMatch) {
+        slotNumber = parseInt(slotMatch[1], 10);
+        locationType = 'grid';
+      } else if (locStr.includes('พัก') || locStr.includes('holding')) {
+        locationType = 'holding';
+      } else if (locStr.includes('คัดแยก') || locStr.includes('triage')) {
+        locationType = 'triage';
+      } else if (locStr.includes('ซ่อม') || locStr.includes('repair')) {
+        locationType = 'repair';
+      } else if (locStr.includes('รอจำหน่าย') || locStr.includes('sale') || locStr.includes('ประมูล')) {
+        locationType = 'sale';
+      }
+
+      parsedTransformers.push({
+        id: `tr-direct-${idx + 1}`,
+        peaNo,
+        serialNo,
+        brand,
+        capacityKva,
+        phase,
+        voltage,
+        status,
+        slotNumber,
+        locationType,
+        receivedDate: (row[dateCol] || new Date().toISOString().split('T')[0]).trim(),
+        updatedAt: (row[updateCol] || new Date().toISOString().split('T')[0]).trim(),
+        notes: (row[notesCol] || '').trim(),
+      });
+    });
 
     return {
-      success: !!data.success,
-      transformers: mappedTransformers,
-      message: data.message || `ดึงข้อมูลสำเร็จ ${mappedTransformers.length} เครื่อง`,
-      spreadsheetId: data.spreadsheetId,
-      spreadsheetUrl: data.spreadsheetUrl,
-      timestamp: data.timestamp,
+      success: true,
+      transformers: parsedTransformers,
+      message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${parsedTransformers.length} เครื่อง)`,
+      spreadsheetId: targetSheetId,
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${targetSheetId}/edit`,
+      timestamp: new Date().toLocaleTimeString('th-TH'),
     };
   } catch (error: any) {
-    console.error('Error fetching transformers from sheets:', error);
+    console.error('Error in direct GViz client fallback:', error);
     return {
       success: false,
       transformers: [],

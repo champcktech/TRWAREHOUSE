@@ -44,13 +44,19 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
       if (saved) {
         const parsed: Transformer[] = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          // Normalize any existing brand to pure English and PEA to TR prefix
-          return parsed.map((t) => ({
-            ...t,
-            peaNo: normalizePeaNo(t.peaNo),
-            brand: cleanBrandToEnglish(t.brand || '')
-          }));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If the cached localStorage still has the old mock data (e.g. TR 51-004512 or old tr-02),
+          // migrate automatically to the actual 18 Google Sheet transformers
+          const isOldStaleMock = parsed.some(
+            (t) => t.peaNo === 'TR 51-004512' || t.peaNo === 'TR 52-008921' || (t.id === 'tr-02' && t.peaNo !== 'TR 51-002342')
+          );
+          if (!isOldStaleMock) {
+            return parsed.map((t) => ({
+              ...t,
+              peaNo: normalizePeaNo(t.peaNo),
+              brand: cleanBrandToEnglish(t.brand || ''),
+            }));
+          }
         }
       }
     } catch (e) {
@@ -59,7 +65,7 @@ export default function App() {
     return INITIAL_TRANSFORMERS.map((t) => ({
       ...t,
       peaNo: normalizePeaNo(t.peaNo),
-      brand: cleanBrandToEnglish(t.brand || '')
+      brand: cleanBrandToEnglish(t.brand || ''),
     }));
   });
 
@@ -172,6 +178,8 @@ export default function App() {
     showNotification(enabled ? 'เปิดการส่งข้อมูล Webhook อัตโนมัติแล้ว' : 'ปิดการส่งข้อมูล Webhook อัตโนมัติ');
   };
 
+  const lastPulledAtRef = React.useRef<number>(0);
+
   /**
    * Pulls transformers data directly from Google Sheets / Webhook.
    * Runs automatically every time the web page is opened.
@@ -183,6 +191,9 @@ export default function App() {
       const res = await fetchTransformersFromSheets({
         webhookUrl: webhookUrl || DEFAULT_WEBHOOK_URL,
       });
+
+      lastPulledAtRef.current = Date.now();
+
       if (res.success && res.transformers && res.transformers.length > 0) {
         isSyncingFromRemoteRef.current = true;
         setTransformers(res.transformers);
@@ -199,6 +210,14 @@ export default function App() {
             ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${res.transformers.length} เครื่อง)`
             : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${res.transformers.length} เครื่อง)`
         );
+      } else if (res.success && res.transformers && res.transformers.length === 0) {
+        // Connected successfully, but sheet has 0 items (not an error!)
+        setSyncStatus('synced');
+        const nowTime = new Date().toLocaleTimeString('th-TH');
+        setLastSyncTime(nowTime);
+        if (!isAuto) {
+          showNotification('เชื่อมต่อ Google Sheets สำเร็จ (ไม่พบรายการหม้อแปลงใหม่ในชีต)');
+        }
       } else if (!isAuto) {
         setSyncStatus('error');
         showNotification(res.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้');
@@ -234,7 +253,18 @@ export default function App() {
       isSyncingFromRemoteRef.current = false;
       return;
     }
-    if (autoSyncWebhook && webhookUrl && webhookUrl.trim()) {
+    // Prevent immediate pushback if we just pulled from remote within 6 seconds
+    if (Date.now() - lastPulledAtRef.current < 6000) {
+      return;
+    }
+    // Only push if webhook URL is a valid Webhook endpoint (not a Google Sheet link)
+    const isValidPushWebhook =
+      webhookUrl &&
+      webhookUrl.trim() &&
+      !webhookUrl.includes('docs.google.com/spreadsheets') &&
+      webhookUrl.includes('/exec');
+
+    if (autoSyncWebhook && isValidPushWebhook) {
       setSyncStatus('syncing');
       const timer = setTimeout(async () => {
         try {
@@ -250,7 +280,7 @@ export default function App() {
           setSyncStatus('error');
           console.warn('Auto-sync webhook failed:', err);
         }
-      }, 1200);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [transformers, config, autoSyncWebhook, webhookUrl]);
@@ -384,7 +414,13 @@ export default function App() {
     showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} เรียบร้อยแล้ว`);
 
     // Instant sync to Google Sheets if connected
-    if (autoSyncWebhook && webhookUrl && webhookUrl.trim()) {
+    if (
+      autoSyncWebhook &&
+      webhookUrl &&
+      webhookUrl.trim() &&
+      !webhookUrl.includes('docs.google.com/spreadsheets') &&
+      webhookUrl.includes('/exec')
+    ) {
       setSyncStatus('syncing');
       const payload = buildWebhookPayload(updated, config, 'sync_all');
       sendWebhook(webhookUrl.trim(), payload)
@@ -411,7 +447,12 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
     showNotification('ลบหม้อแปลงทั้งหมดในระบบเรียบร้อยแล้ว');
 
-    if (webhookUrl && webhookUrl.trim()) {
+    if (
+      webhookUrl &&
+      webhookUrl.trim() &&
+      !webhookUrl.includes('docs.google.com/spreadsheets') &&
+      webhookUrl.includes('/exec')
+    ) {
       setSyncStatus('syncing');
       const payload = buildWebhookPayload([], config, 'sync_all');
       sendWebhook(webhookUrl.trim(), payload)
