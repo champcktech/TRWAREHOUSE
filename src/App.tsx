@@ -253,9 +253,10 @@ export default function App() {
     }
   };
 
-  // Cross-device sync: Load shared master state immediately on startup
+  // Cross-device sync: Load shared master state immediately and listen to real-time SSE stream
   useEffect(() => {
     let isMounted = true;
+    let eventSource: EventSource | null = null;
 
     const loadSharedMasterState = async () => {
       try {
@@ -277,6 +278,9 @@ export default function App() {
             try {
               localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
             } catch {}
+            setTimeout(() => {
+              isSyncingFromRemoteRef.current = false;
+            }, 300);
             return;
           }
         }
@@ -289,12 +293,53 @@ export default function App() {
         await handlePullFromSheets(true);
         isRemoteInitializedRef.current = true;
         setIsInitialLoading(false);
+        setTimeout(() => {
+          isSyncingFromRemoteRef.current = false;
+        }, 300);
       }
     };
 
     loadSharedMasterState();
 
-    // When the user switches back to this tab / unlocks phone, check for server updates silently
+    // 1. Instant Real-Time Sync via Server-Sent Events (SSE)
+    try {
+      eventSource = new EventSource('/api/transformers/stream');
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (
+            data &&
+            Array.isArray(data.transformers) &&
+            data.lastUpdated &&
+            data.lastUpdated > lastServerVersionRef.current
+          ) {
+            isSyncingFromRemoteRef.current = true;
+            lastServerVersionRef.current = data.lastUpdated;
+            setTransformers(data.transformers);
+            if (data.config) {
+              setConfig(data.config);
+            }
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+            try {
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+            } catch {}
+            setTimeout(() => {
+              isSyncingFromRemoteRef.current = false;
+            }, 300);
+          }
+        } catch (err) {
+          console.warn('SSE message parse warning:', err);
+        }
+      };
+      eventSource.onerror = () => {
+        // SSE will automatically attempt reconnection
+      };
+    } catch (sseErr) {
+      console.warn('SSE setup warning, relying on polling:', sseErr);
+    }
+
+    // 2. High-Frequency Polling fallback (every 3 seconds)
     const handleCheckUpdate = async () => {
       try {
         const res = await fetch('/api/transformers');
@@ -304,40 +349,45 @@ export default function App() {
             data &&
             data.success &&
             Array.isArray(data.transformers) &&
-            data.transformers.length > 0 &&
             data.lastUpdated &&
             data.lastUpdated > lastServerVersionRef.current
           ) {
             isSyncingFromRemoteRef.current = true;
+            lastServerVersionRef.current = data.lastUpdated;
             setTransformers(data.transformers);
             if (data.config) {
               setConfig(data.config);
             }
-            lastServerVersionRef.current = data.lastUpdated;
             setSyncStatus('synced');
             setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
             try {
               localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
             } catch {}
+            setTimeout(() => {
+              isSyncingFromRemoteRef.current = false;
+            }, 300);
           }
         }
       } catch {}
     };
 
     window.addEventListener('focus', handleCheckUpdate);
-    // Poll every 20 seconds for seamless cross-device synchronization
-    const pollInterval = setInterval(handleCheckUpdate, 20000);
+    const pollInterval = setInterval(handleCheckUpdate, 3000);
 
     return () => {
       isMounted = false;
       window.removeEventListener('focus', handleCheckUpdate);
       clearInterval(pollInterval);
+      if (eventSource) {
+        eventSource.close();
+      }
     };
   }, []);
 
   // Sync to shared server master whenever a user modifies transformers locally
   useEffect(() => {
     if (!isRemoteInitializedRef.current || isSyncingFromRemoteRef.current) {
+      isSyncingFromRemoteRef.current = false;
       return;
     }
     fetch('/api/transformers', {
@@ -531,6 +581,20 @@ export default function App() {
     }
     showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} เรียบร้อยแล้ว`);
 
+    // Broadcast immediately to server master state so all other open devices reflect this deletion right away
+    fetch('/api/transformers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transformers: updated, config }),
+    })
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data && data.lastUpdated) {
+          lastServerVersionRef.current = data.lastUpdated;
+        }
+      })
+      .catch((e) => console.warn('Server master sync warning on delete:', e));
+
     // Instant sync to Google Sheets if connected
     if (
       autoSyncWebhook &&
@@ -564,6 +628,20 @@ export default function App() {
     setTransformers([]);
     localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
     showNotification('ลบหม้อแปลงทั้งหมดในระบบเรียบร้อยแล้ว');
+
+    // Broadcast immediately to server master state
+    fetch('/api/transformers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transformers: [], config }),
+    })
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data && data.lastUpdated) {
+          lastServerVersionRef.current = data.lastUpdated;
+        }
+      })
+      .catch(() => {});
 
     if (
       webhookUrl &&

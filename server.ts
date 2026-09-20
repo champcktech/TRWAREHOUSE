@@ -37,6 +37,27 @@ const masterState: MasterState = {
   lastUpdated: Date.now(),
 };
 
+// Set of active SSE client response connections for instant real-time synchronization
+const sseClients = new Set<express.Response>();
+
+function broadcastMasterState() {
+  if (sseClients.size === 0) return;
+  const payload = JSON.stringify({
+    type: 'sync',
+    transformers: masterState.transformers,
+    config: masterState.config,
+    lastUpdated: masterState.lastUpdated,
+  });
+  const message = `data: ${payload}\n\n`;
+  for (const client of Array.from(sseClients)) {
+    try {
+      client.write(message);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
 function addWebhookLog(log: Omit<WebhookLog, 'id' | 'timestamp'>) {
   const entry: WebhookLog = {
     id: Math.random().toString(36).substring(2, 9),
@@ -505,6 +526,7 @@ async function startServer() {
       // Keep server master state in sync with latest Google Sheet data
       masterState.transformers = parsedTransformers;
       masterState.lastUpdated = Date.now();
+      broadcastMasterState();
 
       return res.json({
         success: true,
@@ -560,6 +582,31 @@ async function startServer() {
     }
   });
 
+  // Real-time Server-Sent Events (SSE) stream for instant updates across all open devices
+  app.get('/api/transformers/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof (res as any).flushHeaders === 'function') {
+      (res as any).flushHeaders();
+    }
+
+    // Send immediate initial sync
+    const initialPayload = JSON.stringify({
+      type: 'initial',
+      transformers: masterState.transformers,
+      config: masterState.config,
+      lastUpdated: masterState.lastUpdated,
+    });
+    res.write(`data: ${initialPayload}\n\n`);
+
+    sseClients.add(res);
+
+    req.on('close', () => {
+      sseClients.delete(res);
+    });
+  });
+
   app.post('/api/transformers', (req, res) => {
     try {
       const { transformers, config } = req.body;
@@ -569,6 +616,7 @@ async function startServer() {
           masterState.config = config;
         }
         masterState.lastUpdated = Date.now();
+        broadcastMasterState();
         return res.json({
           success: true,
           count: masterState.transformers.length,
@@ -889,6 +937,37 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Background Sheet Synchronization:
+  // Every 8 seconds, if there are active SSE client connections, check if the Google Sheet was modified externally
+  setInterval(async () => {
+    try {
+      if (sseClients.size === 0) return;
+      const pullRes = await fetch('http://localhost:3000/api/sheets-pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spreadsheetId: '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco' }),
+      });
+      if (pullRes.ok) {
+        const data = (await pullRes.json()) as any;
+        if (data && data.success && Array.isArray(data.transformers)) {
+          const currentSignature = masterState.transformers
+            .map((t) => `${t.id || t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
+            .join('|');
+          const newSignature = data.transformers
+            .map((t: any) => `${t.id || t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
+            .join('|');
+          if (currentSignature !== newSignature) {
+            masterState.transformers = data.transformers;
+            masterState.lastUpdated = Date.now();
+            broadcastMasterState();
+          }
+        }
+      }
+    } catch {
+      // background pull check quiet
+    }
+  }, 8000);
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
