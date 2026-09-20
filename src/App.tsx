@@ -179,6 +179,9 @@ export default function App() {
   };
 
   const lastPulledAtRef = React.useRef<number>(0);
+  const isRemoteInitializedRef = React.useRef<boolean>(false);
+  const lastServerVersionRef = React.useRef<number>(0);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
 
   /**
    * Pulls transformers data directly from Google Sheets / Webhook.
@@ -197,11 +200,22 @@ export default function App() {
       if (res.success && res.transformers && res.transformers.length > 0) {
         isSyncingFromRemoteRef.current = true;
         setTransformers(res.transformers);
+        isRemoteInitializedRef.current = true;
         try {
           localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(res.transformers));
         } catch (e) {
           console.warn('Failed to save pulled transformers to localStorage', e);
         }
+
+        // Also update server master state so all other devices see this data immediately
+        try {
+          fetch('/api/transformers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transformers: res.transformers, config }),
+          }).catch(() => {});
+        } catch {}
+
         setSyncStatus('synced');
         const nowTime = new Date().toLocaleTimeString('th-TH');
         setLastSyncTime(nowTime);
@@ -212,6 +226,7 @@ export default function App() {
         );
       } else if (res.success && res.transformers && res.transformers.length === 0) {
         // Connected successfully, but sheet has 0 items (not an error!)
+        isRemoteInitializedRef.current = true;
         setSyncStatus('synced');
         const nowTime = new Date().toLocaleTimeString('th-TH');
         setLastSyncTime(nowTime);
@@ -234,26 +249,129 @@ export default function App() {
       }
     } finally {
       setIsPullingSheets(false);
+      setIsInitialLoading(false);
     }
   };
 
-  // Pull data from Google Sheets EVERY TIME the web page is opened!
+  // Cross-device sync: Load shared master state immediately on startup
   useEffect(() => {
-    handlePullFromSheets(true);
+    let isMounted = true;
+
+    const loadSharedMasterState = async () => {
+      try {
+        const res = await fetch('/api/transformers');
+        if (res.ok) {
+          const data = (await res.json()) as any;
+          if (data && data.success && Array.isArray(data.transformers) && data.transformers.length > 0) {
+            if (!isMounted) return;
+            isSyncingFromRemoteRef.current = true;
+            setTransformers(data.transformers);
+            if (data.config) {
+              setConfig(data.config);
+            }
+            lastServerVersionRef.current = data.lastUpdated || Date.now();
+            isRemoteInitializedRef.current = true;
+            setIsInitialLoading(false);
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+            try {
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+            } catch {}
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load shared state from /api/transformers, falling back to direct sheets pull:', e);
+      }
+
+      // Fallback: Pull directly from Google Sheets
+      if (isMounted) {
+        await handlePullFromSheets(true);
+        isRemoteInitializedRef.current = true;
+        setIsInitialLoading(false);
+      }
+    };
+
+    loadSharedMasterState();
+
+    // When the user switches back to this tab / unlocks phone, check for server updates silently
+    const handleCheckUpdate = async () => {
+      try {
+        const res = await fetch('/api/transformers');
+        if (res.ok) {
+          const data = (await res.json()) as any;
+          if (
+            data &&
+            data.success &&
+            Array.isArray(data.transformers) &&
+            data.transformers.length > 0 &&
+            data.lastUpdated &&
+            data.lastUpdated > lastServerVersionRef.current
+          ) {
+            isSyncingFromRemoteRef.current = true;
+            setTransformers(data.transformers);
+            if (data.config) {
+              setConfig(data.config);
+            }
+            lastServerVersionRef.current = data.lastUpdated;
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+            try {
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+            } catch {}
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener('focus', handleCheckUpdate);
+    // Poll every 20 seconds for seamless cross-device synchronization
+    const pollInterval = setInterval(handleCheckUpdate, 20000);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', handleCheckUpdate);
+      clearInterval(pollInterval);
+    };
   }, []);
 
-  // Debounced auto-sync webhook on changes (outbound push)
+  // Sync to shared server master whenever a user modifies transformers locally
+  useEffect(() => {
+    if (!isRemoteInitializedRef.current || isSyncingFromRemoteRef.current) {
+      return;
+    }
+    fetch('/api/transformers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transformers, config }),
+    })
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data && data.lastUpdated) {
+          lastServerVersionRef.current = data.lastUpdated;
+        }
+      })
+      .catch((e) => console.warn('Server master sync error:', e));
+  }, [transformers, config]);
+
+  // Debounced auto-sync webhook on changes (outbound push to Google Sheets)
+  // Protected by safety gate: NEVER push before initial remote master state has loaded!
   const isInitialMount = React.useRef(true);
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
       return;
     }
+    // SAFETY GATE 1: Must be initialized from remote before sending any push
+    if (!isRemoteInitializedRef.current) {
+      return;
+    }
+    // SAFETY GATE 2: Skip push if the state change came from a remote pull/sync
     if (isSyncingFromRemoteRef.current) {
       isSyncingFromRemoteRef.current = false;
       return;
     }
-    // Prevent immediate pushback if we just pulled from remote within 6 seconds
+    // SAFETY GATE 3: Prevent immediate pushback if we just pulled from remote within 6 seconds
     if (Date.now() - lastPulledAtRef.current < 6000) {
       return;
     }

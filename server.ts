@@ -24,6 +24,19 @@ interface WebhookLog {
 
 const webhookLogs: WebhookLog[] = [];
 
+// Shared Master Transformers State in server memory across all connected devices
+interface MasterState {
+  transformers: any[];
+  config: any;
+  lastUpdated: number;
+}
+
+const masterState: MasterState = {
+  transformers: [],
+  config: null,
+  lastUpdated: Date.now(),
+};
+
 function addWebhookLog(log: Omit<WebhookLog, 'id' | 'timestamp'>) {
   const entry: WebhookLog = {
     id: Math.random().toString(36).substring(2, 9),
@@ -489,6 +502,10 @@ async function startServer() {
         payloadSummary: `ดึงข้อมูล ${parsedTransformers.length} เครื่อง จากแผ่นงาน ${usedSheetName}`,
       });
 
+      // Keep server master state in sync with latest Google Sheet data
+      masterState.transformers = parsedTransformers;
+      masterState.lastUpdated = Date.now();
+
       return res.json({
         success: true,
         count: parsedTransformers.length,
@@ -505,6 +522,62 @@ async function startServer() {
         success: false,
         message: `เกิดข้อผิดพลาดในการดึงข้อมูล: ${err.message}`,
       });
+    }
+  });
+
+  // Shared Master Transformers state across all connected devices
+  app.get('/api/transformers', async (_req, res) => {
+    try {
+      // If server master state is empty (e.g. freshly started container), pull from Google Sheets first
+      if (!masterState.transformers || masterState.transformers.length === 0) {
+        try {
+          const pullRes = await fetch('http://localhost:3000/api/sheets-pull', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId: '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco' }),
+          });
+          if (pullRes.ok) {
+            const data = (await pullRes.json()) as any;
+            if (data && data.success && Array.isArray(data.transformers) && data.transformers.length > 0) {
+              masterState.transformers = data.transformers;
+              masterState.lastUpdated = Date.now();
+            }
+          }
+        } catch (pullErr) {
+          console.warn('[Server Master] Auto-pull on startup warning:', pullErr);
+        }
+      }
+
+      return res.json({
+        success: true,
+        count: masterState.transformers.length,
+        transformers: masterState.transformers,
+        config: masterState.config,
+        lastUpdated: masterState.lastUpdated,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post('/api/transformers', (req, res) => {
+    try {
+      const { transformers, config } = req.body;
+      if (Array.isArray(transformers)) {
+        masterState.transformers = transformers;
+        if (config) {
+          masterState.config = config;
+        }
+        masterState.lastUpdated = Date.now();
+        return res.json({
+          success: true,
+          count: masterState.transformers.length,
+          lastUpdated: masterState.lastUpdated,
+        });
+      }
+      return res.status(400).json({ success: false, message: 'Invalid transformers array' });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err.message });
     }
   });
 
