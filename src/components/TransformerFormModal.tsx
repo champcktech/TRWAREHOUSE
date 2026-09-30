@@ -213,6 +213,10 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
       setErrorMsg('กรุณากรอก Serial Number (S/N)');
       return;
     }
+    if (!initialData && !notes.trim()) {
+      setErrorMsg('กรุณากรอกหมายเหตุ / รายละเอียดอาการซ่อม หรือแหล่งที่มา ก่อนเพิ่มหม้อแปลงใหม่');
+      return;
+    }
 
     // Check duplicate PEA code
     const duplicatePea = existingTransformers.find(
@@ -239,7 +243,7 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
       if (isLocationChanged) {
         const correctPin = localStorage.getItem('warehouse_move_pin') || '1234';
         if (movePinInput.trim() !== correctPin) {
-          setErrorMsg('รหัสผ่านยืนยันการย้ายจุดวางไม่ถูกต้อง (ค่าเริ่มต้น: 1234)');
+          setErrorMsg('รหัสผ่านยืนยันการย้ายจุดวางไม่ถูกต้อง');
           return;
         }
       }
@@ -623,12 +627,9 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
                           type="password"
                           value={movePinInput}
                           onChange={(e) => setMovePinInput(e.target.value)}
-                          placeholder="ใส่รหัสผ่าน 4 หลัก (ค่าเริ่มต้น: 1234)"
+                          placeholder="กรอกรหัสผ่านยืนยัน (PIN)"
                           className="w-full px-3 py-1.5 bg-white border border-violet-200 focus:border-violet-400 rounded-lg text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-violet-100"
                         />
-                        <p className="text-[10px] text-slate-500 mt-1">
-                          * รหัสยืนยันการย้ายเริ่มต้นคือ 1234
-                        </p>
                       </div>
                     );
                   })()}
@@ -711,14 +712,27 @@ export const TransformerFormModal: React.FC<TransformerFormModalProps> = ({
           {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              หมายเหตุ / รายละเอียดอาการซ่อม / แหล่งที่มา
+              หมายเหตุ / รายละเอียดอาการซ่อม / แหล่งที่มา{' '}
+              {!initialData && <span className="text-rose-600 font-bold">* (บังคับระบุ)</span>}
             </label>
             <textarea
               rows={2}
+              required={!initialData}
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="ระบุอาการชำรุด, ประวัติการทดสอบ หรือจุดติดตั้งเดิม..."
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              onChange={(e) => {
+                setNotes(e.target.value);
+                if (errorMsg) setErrorMsg('');
+              }}
+              placeholder={
+                !initialData
+                  ? 'จำเป็นต้องระบุ: อาการชำรุด, ประวัติการทดสอบ หรือจุดติดตั้งเดิม...'
+                  : 'ระบุอาการชำรุด, ประวัติการทดสอบ หรือจุดติดตั้งเดิม...'
+              }
+              className={`w-full px-3 py-2 bg-slate-50 border rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-violet-400 focus:ring-2 focus:ring-violet-100 ${
+                !initialData && !notes.trim()
+                  ? 'border-amber-300/90'
+                  : 'border-slate-200'
+              }`}
             />
           </div>
 

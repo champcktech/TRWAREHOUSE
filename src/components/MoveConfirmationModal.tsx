@@ -212,7 +212,7 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
                       setPinInput(e.target.value);
                       if (errorMessage) setErrorMessage('');
                     }}
-                    placeholder="ใส่รหัสผ่าน 4 หลัก (ค่าเริ่มต้น: 1234)"
+                    placeholder="กรอกรหัสผ่านยืนยัน (PIN)"
                     className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 focus:border-violet-400 rounded-xl text-sm font-mono tracking-widest text-slate-800 placeholder:text-slate-400 placeholder:tracking-normal focus:outline-hidden focus:bg-white focus:ring-2 focus:ring-violet-100"
                   />
                 </div>
@@ -225,10 +225,7 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-500">
-                  รหัสเริ่มต้น: <span className="font-mono text-slate-700 font-bold">1234</span>
-                </span>
+              <div className="flex items-center justify-end pt-1">
                 <button
                   type="button"
                   onClick={() => setIsChangingPin(true)}
@@ -279,7 +276,7 @@ export const MoveConfirmationModal: React.FC<MoveConfirmationModalProps> = ({
                   type="password"
                   value={currentPinInput}
                   onChange={(e) => setCurrentPinInput(e.target.value)}
-                  placeholder="รหัสปัจจุบัน (เริ่มต้น: 1234)"
+                  placeholder="กรอกรหัสผ่านปัจจุบัน"
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 focus:border-violet-400 rounded-lg text-xs font-mono text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-violet-100"
                 />
               </div>
