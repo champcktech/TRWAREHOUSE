@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Transformer, WarehouseConfig, STATUS_CONFIG, WarehouseZoneId, TransformerLocationType } from '../types';
+import { Transformer, WarehouseConfig, getStatusConfig, WarehouseZoneId, TransformerLocationType } from '../types';
 import { cleanBrandToEnglish, normalizePeaNo } from '../utils/customOptions';
 import { TransformerTriangle } from './TransformerTriangle';
-import { X, Edit2, Trash2, ArrowRightLeft, Calendar, Tag, Zap, Cpu, AlertTriangle, Truck, Wrench } from 'lucide-react';
+import { X, Edit2, Trash2, ArrowRightLeft, Calendar, Tag, Zap, Cpu, AlertTriangle, Truck, Wrench, Check } from 'lucide-react';
 
 interface TransformerDetailModalProps {
   transformer: Transformer | null;
@@ -36,7 +36,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
 
   if (!isOpen || !transformer) return null;
 
-  const statusConfig = STATUS_CONFIG[transformer.status];
+  const statusConfig = getStatusConfig(transformer?.status);
 
   const gridCols = config.columns || config.leftGrid?.columns || 4;
   const gridRows = config.rows || config.leftGrid?.rows || 14;
@@ -78,22 +78,22 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-[#0c0c0c] rounded-xl shadow-2xl border border-[#2a2a2a] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-[#eff2ee] rounded-2xl shadow-xl border border-[#c6d1cb] w-full max-w-lg sm:max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#222] bg-[#121212]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#ced8d2] bg-[#e5eae7]">
           <div className="flex items-center gap-2">
             <span
               className="w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: statusConfig.hexColor }}
             />
-            <h3 className="text-base font-bold text-white tracking-tight">
+            <h3 className="text-base font-bold text-[#2b3833] tracking-tight">
               รายละเอียดหม้อแปลงไฟฟ้า
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded text-[#666] hover:text-white hover:bg-[#202020] transition-colors"
+            className="p-1.5 rounded-lg text-[#5a6b65] hover:text-[#2b3833] hover:bg-[#dce3de] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -102,8 +102,8 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
         {/* Modal Content */}
         <div className="p-6 space-y-5">
           {/* Top Hero Card: Triangle Representation & Main Status */}
-          <div className="p-4 rounded-xl bg-[#141414] border border-[#262626] flex items-center gap-5">
-            <div className="shrink-0 p-2 bg-[#0a0a0a] rounded-lg border border-[#222]">
+          <div className="p-4 rounded-xl bg-[#e6ebe8] border border-[#ced8d2] flex items-center gap-5">
+            <div className="shrink-0 p-2 bg-[#f5f4ef] rounded-xl border border-[#ced8d2] shadow-2xs">
               <TransformerTriangle transformer={transformer} size="normal" />
             </div>
 
@@ -113,142 +113,156 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
                   className="px-2 py-0.5 rounded text-xs font-bold font-mono"
                   style={{
                     backgroundColor: `${statusConfig.hexColor}25`,
-                    color: statusConfig.hexColor,
-                    border: `1px solid ${statusConfig.hexColor}40`
+                    color: '#1e293b',
+                    border: `1px solid ${statusConfig.hexColor}60`
                   }}
                 >
                   สถานะ: {statusConfig.label} (สี{statusConfig.colorName})
                 </span>
-                <span className="text-xs bg-[#222] text-[#aaa] border border-[#333] px-2 py-0.5 rounded font-mono font-medium">
+                <span className="text-xs bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-mono font-medium">
                   {transformer.phase}
                 </span>
               </div>
 
-              <h2 className="text-xl font-bold font-mono text-white truncate">
+              <h2 className="text-xl font-bold font-mono text-slate-800 truncate">
                 {normalizePeaNo(transformer.peaNo)}
               </h2>
-              <p className="text-xs text-[#888] font-mono mt-0.5">
+              <p className="text-xs text-slate-500 font-mono mt-0.5">
                 S/N: {transformer.serialNo}
               </p>
-              <p className="text-xs text-[#777] mt-1">
+              <p className="text-xs text-slate-600 mt-1">
                 {statusConfig.description}
               </p>
             </div>
           </div>
 
           {/* Current Bay Position & Quick Move */}
-          <div className="p-3.5 rounded-xl border border-[#2a2a2a] bg-[#121212] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-xs text-orange-400 font-medium block">
-                จุดจัดวางปัจจุบันในผัง
-              </span>
-              <span className="text-sm font-bold text-white">
-                {renderCurrentLocationLabel()}
-              </span>
+          <div className="p-3.5 sm:p-4 rounded-xl border border-slate-200 bg-white shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-xs text-violet-700 font-medium block">
+                  จุดจัดวางปัจจุบันในผัง
+                </span>
+                <span className="text-sm font-bold text-slate-800 block mt-0.5">
+                  {renderCurrentLocationLabel()}
+                </span>
+              </div>
+
+              {!isChangingSlot && (
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {transformer.locationType === 'repair' ? (
+                    <button
+                      onClick={() => onMove(transformer.id, null, undefined, 'holding')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors shadow-2xs"
+                      title="รับหม้อแปลงกลับจากการส่งซ่อมเข้าสู่จุดพัก"
+                    >
+                      <span>📦 รับกลับเข้าคลัง</span>
+                    </button>
+                  ) : transformer.locationType === 'sale' ? (
+                    <button
+                      onClick={() => onMove(transformer.id, null, undefined, 'holding')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-800 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors shadow-2xs"
+                      title="นำหม้อแปลงออกจากจุดวางรอขายกลับสู่จุดพัก"
+                    >
+                      <span>📦 กลับเข้าจุดพัก</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onMove(transformer.id, null, undefined, 'repair')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 transition-colors shadow-2xs"
+                      title="บันทึกย้ายหม้อแปลงไปส่งซ่อมภายนอก เพื่อคืนช่องว่างในผังคลัง"
+                    >
+                      <Truck className="w-3.5 h-3.5" />
+                      <span>ส่งซ่อม</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setNewLocInput(
+                        transformer.locationType === 'triage'
+                          ? 'triage'
+                          : transformer.locationType === 'repair'
+                          ? 'repair'
+                          : transformer.locationType === 'sale'
+                          ? 'sale'
+                          : transformer.slotNumber
+                          ? `left-${transformer.slotNumber}`
+                          : 'holding'
+                      );
+                      setIsChangingSlot(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors shadow-2xs"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    ย้ายจุดวาง
+                  </button>
+                </div>
+              )}
             </div>
 
-            {isChangingSlot ? (
-              <div className="flex items-center gap-2">
-                <select
-                  value={newLocInput}
-                  onChange={(e) => setNewLocInput(e.target.value)}
-                  aria-label="เลือกตำแหน่งปลายทาง"
-                  className="px-2.5 py-1.5 bg-[#1a1a1a] border border-[#333] rounded text-xs text-[#e5e5e5]"
-                >
-                  <option value="">-- เลือกจุดวางปลายทาง --</option>
-                  <optgroup label="📍 พื้นที่พักรอ / คัดแยก / ส่งซ่อม / รอขาย">
-                    <option value="triage">🔍 จุดรอคัดแยก (Triage Area)</option>
-                    <option value="holding">📦 จุดพักรอจัดเก็บ (Holding Area)</option>
-                    <option value="repair">🚚 ส่งซ่อมภายนอก (Out for Repair - โรงงาน/ศูนย์ซ่อม)</option>
-                    <option value="sale">🏷️ จุดวางรอขาย (Waiting for Sale - รอจำหน่าย/ขายทอดตลาด)</option>
-                  </optgroup>
-                  <optgroup label={`📍 ${gridName}`}>
-                    {Array.from({ length: gridTotal }, (_, i) => i + 1).map((s) => {
-                      const occ = allTransformers.find(
-                        (t) => (t.locationType === 'grid' || !t.locationType) && t.slotNumber === s && t.id !== transformer.id
-                      );
-                      return (
-                        <option key={`left-${s}`} value={`left-${s}`}>
-                          {gridPrefix} {String(s).padStart(2, '0')} {occ ? `(มี ${normalizePeaNo(occ.peaNo)})` : '(ว่าง)'}
-                        </option>
-                      );
-                    })}
-                  </optgroup>
-                </select>
-                <button
-                  onClick={handleApplyLocationChange}
-                  disabled={!newLocInput}
-                  className="px-3 py-1.5 text-xs font-semibold bg-orange-600 text-white rounded hover:bg-orange-500 disabled:opacity-50"
-                >
-                  ย้าย
-                </button>
-                <button
-                  onClick={() => setIsChangingSlot(false)}
-                  className="px-2 py-1.5 text-xs text-[#777] hover:text-white"
-                >
-                  ยกเลิก
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {transformer.locationType === 'repair' ? (
-                  <button
-                    onClick={() => onMove(transformer.id, null, undefined, 'holding')}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-950/40 border border-emerald-800/60 rounded-lg hover:bg-emerald-900/50 transition-colors"
-                    title="รับหม้อแปลงกลับจากการส่งซ่อมเข้าสู่จุดพัก"
-                  >
-                    <span>📦 รับกลับเข้าคลัง</span>
-                  </button>
-                ) : transformer.locationType === 'sale' ? (
-                  <button
-                    onClick={() => onMove(transformer.id, null, undefined, 'holding')}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-purple-300 bg-purple-950/40 border border-purple-800/60 rounded-lg hover:bg-purple-900/50 transition-colors"
-                    title="นำหม้อแปลงออกจากจุดวางรอขายกลับสู่จุดพัก"
-                  >
-                    <span>📦 กลับเข้าจุดพัก</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => onMove(transformer.id, null, undefined, 'repair')}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-300 bg-sky-950/40 border border-sky-800/60 rounded-lg hover:bg-sky-900/50 transition-colors"
-                    title="บันทึกย้ายหม้อแปลงไปส่งซ่อมภายนอก เพื่อคืนช่องว่างในผังคลัง"
-                  >
-                    <Truck className="w-3.5 h-3.5" />
-                    <span>ส่งซ่อม</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setNewLocInput(
-                      transformer.locationType === 'triage'
-                        ? 'triage'
-                        : transformer.locationType === 'repair'
-                        ? 'repair'
-                        : transformer.locationType === 'sale'
-                        ? 'sale'
-                        : transformer.slotNumber
-                        ? `left-${transformer.slotNumber}`
-                        : 'holding'
-                    );
-                    setIsChangingSlot(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-400 bg-[#1a1a1a] border border-[#333] rounded-lg hover:bg-[#252525] transition-colors"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5" />
-                  ย้ายจุดวาง
-                </button>
+            {isChangingSlot && (
+              <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                <label className="text-[11px] font-medium text-slate-600 block">
+                  เลือกตำแหน่งปลายทางใหม่ที่ต้องการย้าย:
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <select
+                      value={newLocInput}
+                      onChange={(e) => setNewLocInput(e.target.value)}
+                      aria-label="เลือกตำแหน่งปลายทาง"
+                      className="w-full px-3 py-2 bg-slate-50 border border-violet-300 focus:border-violet-500 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:bg-white focus:ring-2 focus:ring-violet-100"
+                    >
+                      <option value="">-- เลือกจุดวางปลายทาง --</option>
+                      <optgroup label="📍 พื้นที่พักรอ / คัดแยก / ส่งซ่อม / รอขาย">
+                        <option value="triage">🔍 จุดรอคัดแยก (Triage Area)</option>
+                        <option value="holding">📦 จุดพักรอจัดเก็บ (Holding Area)</option>
+                        <option value="repair">🚚 ส่งซ่อมภายนอก (Out for Repair - โรงงาน/ศูนย์ซ่อม)</option>
+                        <option value="sale">🏷️ จุดวางรอขาย (Waiting for Sale - รอจำหน่าย/ขายทอดตลาด)</option>
+                      </optgroup>
+                      <optgroup label={`📍 ${gridName}`}>
+                        {Array.from({ length: gridTotal }, (_, i) => i + 1).map((s) => {
+                          const occ = allTransformers.find(
+                            (t) => (t.locationType === 'grid' || !t.locationType) && t.slotNumber === s && t.id !== transformer.id
+                          );
+                          return (
+                            <option key={`left-${s}`} value={`left-${s}`}>
+                              {gridPrefix} {String(s).padStart(2, '0')} {occ ? `(มี ${normalizePeaNo(occ.peaNo)})` : '(ว่าง)'}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 justify-end shrink-0">
+                    <button
+                      onClick={handleApplyLocationChange}
+                      disabled={!newLocInput}
+                      className="flex-1 sm:flex-none px-4 py-2 text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors shadow-xs disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>ยืนยันย้าย</span>
+                    </button>
+                    <button
+                      onClick={() => setIsChangingSlot(false)}
+                      className="px-3 py-2 text-xs text-slate-600 hover:text-slate-800 bg-slate-100 border border-slate-200 rounded-lg hover:bg-slate-200 transition-colors"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
           {/* Waiting for Sale Info Box */}
           {transformer.locationType === 'sale' && (
-            <div className="p-3.5 rounded-xl border border-purple-800/60 bg-purple-950/20 text-xs space-y-2">
-              <div className="flex items-center gap-2 text-purple-400 font-bold text-xs">
+            <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/60 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-purple-700 font-bold text-xs">
                 <Tag className="w-4 h-4" />
                 <span>จุดวางรอขาย (Waiting for Sale / Auction Area)</span>
               </div>
-              <p className="text-[#ccc] text-[11px] leading-relaxed">
+              <p className="text-slate-600 text-[11px] leading-relaxed">
                 หม้อแปลงเครื่องนี้ตั้งอยู่ในพื้นที่ <strong>"จุดวางรอขาย"</strong> เพื่อรอการจำหน่าย หรือขายทอดตลาดตามระเบียบพัสดุ ช่องในผังคลังหลักจึงว่างและพร้อมรองรับหม้อแปลงอื่น
               </p>
             </div>
@@ -256,30 +270,30 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
 
           {/* Out for Repair Info Box */}
           {transformer.locationType === 'repair' && (
-            <div className="p-3.5 rounded-xl border border-sky-800/60 bg-sky-950/20 text-xs space-y-2">
+            <div className="p-3.5 rounded-xl border border-sky-200 bg-sky-50/60 text-xs space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sky-400 font-bold text-xs">
+                <div className="flex items-center gap-2 text-sky-700 font-bold text-xs">
                   <Truck className="w-4 h-4" />
                   <span>ข้อมูลการส่งซ่อมภายนอก (Out for Repair)</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-1 text-[#ccc]">
+              <div className="grid grid-cols-2 gap-2 pt-1 text-slate-700">
                 <div>
-                  <span className="text-[#777] block text-[11px]">โรงงาน/ศูนย์ส่งซ่อม:</span>
-                  <span className="font-semibold text-white">{transformer.repairVendor || 'ไม่ได้ระบุ'}</span>
+                  <span className="text-slate-500 block text-[11px]">โรงงาน/ศูนย์ส่งซ่อม:</span>
+                  <span className="font-semibold text-slate-800">{transformer.repairVendor || 'ไม่ได้ระบุ'}</span>
                 </div>
                 <div>
-                  <span className="text-[#777] block text-[11px]">วันที่ส่งซ่อม:</span>
-                  <span className="font-semibold text-white font-mono">{transformer.repairSentDate || '-'}</span>
+                  <span className="text-slate-500 block text-[11px]">วันที่ส่งซ่อม:</span>
+                  <span className="font-semibold text-slate-800 font-mono">{transformer.repairSentDate || '-'}</span>
                 </div>
                 <div>
-                  <span className="text-[#777] block text-[11px]">เลขที่ใบส่งซ่อม/เอกสาร:</span>
-                  <span className="font-semibold text-white font-mono">{transformer.repairDocNo || '-'}</span>
+                  <span className="text-slate-500 block text-[11px]">เลขที่ใบส่งซ่อม/เอกสาร:</span>
+                  <span className="font-semibold text-slate-800 font-mono">{transformer.repairDocNo || '-'}</span>
                 </div>
                 <div>
-                  <span className="text-[#777] block text-[11px]">กำหนดส่งคืนโดยประมาณ:</span>
-                  <span className="font-semibold text-white font-mono">{transformer.repairExpectedReturn || '-'}</span>
+                  <span className="text-slate-500 block text-[11px]">กำหนดส่งคืนโดยประมาณ:</span>
+                  <span className="font-semibold text-slate-800 font-mono">{transformer.repairExpectedReturn || '-'}</span>
                 </div>
               </div>
             </div>
@@ -287,42 +301,42 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
 
           {/* Detailed Specs Grid */}
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="p-3 bg-[#141414] rounded-lg border border-[#222]">
-              <span className="text-[#666] flex items-center gap-1 mb-1">
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/80">
+              <span className="text-slate-500 flex items-center gap-1 mb-1">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
                 ขนาดพิกัด (kVA)
               </span>
-              <span className="text-sm font-bold font-mono text-white">
+              <span className="text-sm font-bold font-mono text-slate-800">
                 {transformer.capacityKva} kVA
               </span>
             </div>
 
-            <div className="p-3 bg-[#141414] rounded-lg border border-[#222]">
-              <span className="text-[#666] flex items-center gap-1 mb-1">
-                <Tag className="w-3.5 h-3.5 text-blue-400" />
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/80">
+              <span className="text-slate-500 flex items-center gap-1 mb-1">
+                <Tag className="w-3.5 h-3.5 text-blue-500" />
                 ยี่ห้อ (Brand)
               </span>
-              <span className="text-sm font-bold text-white">
+              <span className="text-sm font-bold text-slate-800">
                 {cleanBrandToEnglish(transformer.brand)}
               </span>
             </div>
 
-            <div className="p-3 bg-[#141414] rounded-lg border border-[#222]">
-              <span className="text-[#666] flex items-center gap-1 mb-1">
-                <Cpu className="w-3.5 h-3.5 text-orange-400" />
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/80">
+              <span className="text-slate-500 flex items-center gap-1 mb-1">
+                <Cpu className="w-3.5 h-3.5 text-violet-500" />
                 พิกัดแรงดัน
               </span>
-              <span className="text-sm font-semibold font-mono text-[#ccc]">
+              <span className="text-sm font-semibold font-mono text-slate-700">
                 {transformer.voltage || '22 kV / 400-230 V'}
               </span>
             </div>
 
-            <div className="p-3 bg-[#141414] rounded-lg border border-[#222]">
-              <span className="text-[#666] flex items-center gap-1 mb-1">
-                <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/80">
+              <span className="text-slate-500 flex items-center gap-1 mb-1">
+                <Calendar className="w-3.5 h-3.5 text-emerald-500" />
                 วันที่รับเข้าคลัง
               </span>
-              <span className="text-sm font-semibold font-mono text-[#ccc]">
+              <span className="text-sm font-semibold font-mono text-slate-700">
                 {transformer.receivedDate}
               </span>
             </div>
@@ -330,11 +344,11 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
 
           {/* Notes */}
           {transformer.notes && (
-            <div className="p-3 bg-[#161616] rounded-lg border border-[#262626] text-xs">
-              <span className="font-semibold text-orange-400 block mb-0.5">
+            <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/80 text-xs">
+              <span className="font-semibold text-amber-800 block mb-0.5">
                 หมายเหตุ / ประวัติอาการ:
               </span>
-              <p className="text-[#bbb] leading-relaxed">
+              <p className="text-slate-700 leading-relaxed">
                 {transformer.notes}
               </p>
             </div>
@@ -342,18 +356,18 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
 
           {/* Delete Confirmation Warning */}
           {showDeleteConfirm && (
-            <div className="p-4 bg-rose-950/40 border border-rose-800/80 rounded-lg space-y-2 text-xs">
-              <div className="flex items-center gap-2 text-rose-300 font-bold">
-                <AlertTriangle className="w-4 h-4 text-rose-400" />
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-rose-800 font-bold">
+                <AlertTriangle className="w-4 h-4 text-rose-600" />
                 <span>ยืนยันการลบหม้อแปลง {transformer.peaNo}?</span>
               </div>
-              <p className="text-rose-200/80">
+              <p className="text-rose-700">
                 ข้อมูลหม้อแปลงจะถูกลบออกจากระบบและปลดออกจากผังคลังทันที
               </p>
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="px-3 py-1.5 text-[#aaa] hover:text-white bg-[#1a1a1a] border border-[#333] rounded"
+                  className="px-3 py-1.5 text-slate-600 hover:text-slate-800 bg-white border border-slate-200 rounded-lg"
                 >
                   ยกเลิก
                 </button>
@@ -362,7 +376,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
                     onDelete(transformer.id);
                     onClose();
                   }}
-                  className="px-3 py-1.5 font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded shadow-xs"
+                  className="px-3 py-1.5 font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs"
                 >
                   ยืนยันลบ
                 </button>
@@ -371,10 +385,10 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
           )}
 
           {/* Action Footer Buttons */}
-          <div className="flex items-center justify-between pt-4 border-t border-[#222]">
+          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-950/40 rounded transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
             >
               <Trash2 className="w-4 h-4" />
               ลบหม้อแปลง
@@ -383,7 +397,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-xs font-medium text-[#888] hover:text-white hover:bg-[#1a1a1a] rounded transition-colors"
+                className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 ปิด
               </button>
@@ -392,7 +406,7 @@ export const TransformerDetailModal: React.FC<TransformerDetailModalProps> = ({
                   onClose();
                   onEdit(transformer);
                 }}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-orange-600 hover:bg-orange-500 rounded-lg transition-colors shadow-sm"
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-colors shadow-xs"
               >
                 <Edit2 className="w-3.5 h-3.5" />
                 แก้ไขข้อมูล

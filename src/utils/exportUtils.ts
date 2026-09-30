@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Transformer, STATUS_CONFIG, WarehouseConfig } from '../types';
+import { Transformer, STATUS_CONFIG, getStatusConfig, WarehouseConfig } from '../types';
 import { cleanBrandToEnglish } from './customOptions';
 
 export function exportToExcel(
@@ -76,8 +76,8 @@ export function exportToExcel(
       'ระบบเฟส': t.phase,
       'พิกัดแรงดัน': t.voltage || '22 kV / 400-230 V',
       'ยี่ห้อ': cleanBrandToEnglish(t.brand),
-      'สถานะ': STATUS_CONFIG[t.status].label,
-      'สีสถานะ': STATUS_CONFIG[t.status].colorName,
+      'สถานะ': getStatusConfig(t?.status).label,
+      'สีสถานะ': getStatusConfig(t?.status).colorName,
       'โรงงานส่งซ่อม': t.repairVendor || '-',
       'วันที่ส่งซ่อม': t.repairSentDate || '-',
       'เลขที่ใบส่งซ่อม': t.repairDocNo || '-',

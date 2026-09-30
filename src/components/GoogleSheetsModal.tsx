@@ -201,46 +201,46 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-[#111] border border-[#2c2c2c] rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-[#eff2ee] border border-[#c6d1cb] rounded-2xl shadow-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#222] bg-[#141414]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#ced8d2] bg-[#e5eae7]">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-950/80 border border-emerald-700/60 flex items-center justify-center text-emerald-400">
+            <div className="w-8 h-8 rounded-xl bg-[#ccebd9] border border-[#a5d9bd] flex items-center justify-center text-[#1f5239]">
               <FileSpreadsheet className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <h3 className="text-base font-bold text-[#2b3833] tracking-tight flex items-center gap-2">
                 เชื่อมต่อ Google Sheets
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 font-mono">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-[#ccebd9] text-[#1f5239] border border-[#a5d9bd] font-mono">
                   Sheets API v4
                 </span>
               </h3>
-              <p className="text-xs text-[#888]">
+              <p className="text-xs text-[#5a6b65]">
                 ซิงค์ ส่งออก และนำเข้าข้อมูลสต็อกหม้อแปลงและผังคลัง PEA
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-[#777] hover:text-white p-1 rounded hover:bg-[#222] transition-colors"
+            className="text-[#5a6b65] hover:text-[#2b3833] p-1.5 rounded-lg hover:bg-[#dce3de] transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content Area */}
-        <div className="p-5 overflow-y-auto space-y-4">
+        <div className="p-6 overflow-y-auto space-y-4">
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3 bg-rose-950/60 border border-rose-800/80 rounded-lg text-rose-300 text-xs flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div className="flex-1">{errorMessage}</div>
             </div>
           )}
 
           {/* Auth Section */}
-          <div className="p-3.5 bg-[#171717] rounded-lg border border-[#2a2a2a] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             {currentUser ? (
               <div className="flex items-center gap-3">
                 {currentUser.photoURL ? (
@@ -248,28 +248,28 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     src={currentUser.photoURL}
                     alt={currentUser.displayName || 'Google User'}
                     referrerPolicy="no-referrer"
-                    className="w-10 h-10 rounded-full border border-emerald-500/50"
+                    className="w-10 h-10 rounded-full border border-emerald-300"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-emerald-900 border border-emerald-600 flex items-center justify-center font-bold text-emerald-200 text-sm">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center font-bold text-emerald-800 text-sm">
                     {(currentUser.displayName || currentUser.email || 'G')[0].toUpperCase()}
                   </div>
                 )}
                 <div>
-                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     {currentUser.displayName || 'ผู้ใช้ Google'}
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   </div>
-                  <div className="text-[11px] text-[#888]">{currentUser.email}</div>
-                  <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                  <div className="text-[11px] text-slate-500">{currentUser.email}</div>
+                  <div className="text-[10px] text-emerald-600 font-mono mt-0.5">
                     ✓ เชื่อมต่อสิทธิ์ Google Sheets สำเร็จ
                   </div>
                 </div>
               </div>
             ) : (
               <div className="space-y-1">
-                <div className="text-xs font-bold text-white">ยังไม่ได้เข้าสู่ระบบ Google</div>
-                <div className="text-[11px] text-[#888]">
+                <div className="text-xs font-bold text-slate-800">ยังไม่ได้เข้าสู่ระบบ Google</div>
+                <div className="text-[11px] text-slate-500">
                   เข้าสู่ระบบเพื่ออนุญาตให้แอปอ่านและบันทึกข้อมูลลงในบัญชี Google Sheets ของคุณ
                 </div>
               </div>
@@ -279,7 +279,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               {currentUser ? (
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#222] hover:bg-[#2c2c2c] border border-[#333] text-xs font-semibold text-[#bbb] hover:text-white rounded transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 rounded-lg transition-colors shadow-2xs"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>ออกจากระบบ</span>
@@ -288,10 +288,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 <button
                   onClick={handleSignIn}
                   disabled={isLoggingIn}
-                  className="flex items-center gap-2.5 px-4 py-2 bg-white hover:bg-[#f1f1f1] text-[#222] font-semibold text-xs rounded-md shadow transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2.5 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 font-semibold text-xs rounded-xl shadow-xs transition-colors disabled:opacity-50"
                 >
                   {isLoggingIn ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                    <Loader2 className="w-4 h-4 animate-spin text-violet-600" />
                   ) : (
                     <svg className="w-4 h-4" viewBox="0 0 48 48">
                       <path
@@ -319,13 +319,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           </div>
 
           {/* Action Tabs */}
-          <div className="flex border-b border-[#222] text-xs">
+          <div className="flex border-b border-slate-200 text-xs">
             <button
               onClick={() => setActiveTab('export')}
               className={`flex items-center gap-1.5 px-4 py-2 font-semibold border-b-2 transition-colors ${
                 activeTab === 'export'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-950/20'
-                  : 'border-transparent text-[#888] hover:text-[#e5e5e5]'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <Download className="w-3.5 h-3.5" />
@@ -335,8 +335,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               onClick={() => setActiveTab('sync')}
               className={`flex items-center gap-1.5 px-4 py-2 font-semibold border-b-2 transition-colors ${
                 activeTab === 'sync'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-950/20'
-                  : 'border-transparent text-[#888] hover:text-[#e5e5e5]'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -346,8 +346,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               onClick={() => setActiveTab('import')}
               className={`flex items-center gap-1.5 px-4 py-2 font-semibold border-b-2 transition-colors ${
                 activeTab === 'import'
-                  ? 'border-emerald-500 text-emerald-400 bg-emerald-950/20'
-                  : 'border-transparent text-[#888] hover:text-[#e5e5e5]'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <Upload className="w-3.5 h-3.5" />
@@ -359,7 +359,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           {activeTab === 'export' && (
             <div className="space-y-3 pt-2">
               <div>
-                <label className="block text-xs font-semibold text-[#ccc] mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   ชื่อไฟล์ Google Sheets
                 </label>
                 <input
@@ -367,24 +367,24 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   value={sheetTitle}
                   onChange={(e) => setSheetTitle(e.target.value)}
                   placeholder="ระบุชื่อเอกสาร..."
-                  className="w-full px-3 py-2 bg-[#171717] border border-[#333] rounded-lg text-xs text-white placeholder-[#666] focus:outline-hidden focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
 
-              <div className="p-3 bg-[#171717] rounded-lg border border-[#2a2a2a] text-xs space-y-1.5 text-[#aaa]">
-                <div className="font-semibold text-white flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-600">
+                <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-emerald-600" />
                   สเปรดชีตที่สร้างจะประกอบด้วย 3 แผ่นงาน (Tabs):
                 </div>
-                <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-[#888]">
+                <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-500">
                   <li>
-                    <strong className="text-[#ccc]">ข้อมูลหม้อแปลงทั้งหมด</strong>: รายการหม้อแปลง {transformers.length} เครื่อง (PEA No., Serial, ยี่ห้อ, kVA, สถานะ, ช่อง)
+                    <strong className="text-slate-700">ข้อมูลหม้อแปลงทั้งหมด</strong>: รายการหม้อแปลง {transformers.length} เครื่อง (PEA No., Serial, ยี่ห้อ, kVA, สถานะ, ช่อง)
                   </li>
                   <li>
-                    <strong className="text-[#ccc]">ผังคลังและสถานะช่อง</strong>: แสดงสถานะช่องจัดเก็บทั้ง {config.columns * config.rows} ช่อง
+                    <strong className="text-slate-700">ผังคลังและสถานะช่อง</strong>: แสดงสถานะช่องจัดเก็บทั้ง {config.columns * config.rows} ช่อง
                   </li>
                   <li>
-                    <strong className="text-[#ccc]">สรุปสถิติคลัง</strong>: จำนวนเครื่องตามสถานะสี และอัตราการใช้งานคลัง
+                    <strong className="text-slate-700">สรุปสถิติคลัง</strong>: จำนวนเครื่องตามสถานะสี และอัตราการใช้งานคลัง
                   </li>
                 </ul>
               </div>
@@ -392,7 +392,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               <button
                 onClick={handleExportNewSheet}
                 disabled={isLoading || !accessToken}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors shadow-xs disabled:opacity-50"
               >
                 {isLoading ? (
                   <>
@@ -413,7 +413,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           {activeTab === 'sync' && (
             <div className="space-y-3 pt-2">
               <div>
-                <label className="block text-xs font-semibold text-[#ccc] mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   URL หรือ Spreadsheet ID ของ Google Sheets ที่มีอยู่
                 </label>
                 <input
@@ -421,12 +421,12 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   value={existingSheetInput}
                   onChange={(e) => setExistingSheetInput(e.target.value)}
                   placeholder="https://docs.google.com/spreadsheets/d/1abc.../edit หรือ Spreadsheet ID"
-                  className="w-full px-3 py-2 bg-[#171717] border border-[#333] rounded-lg text-xs text-white placeholder-[#666] focus:outline-hidden focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
 
-              <div className="p-3 bg-amber-950/30 border border-amber-800/40 rounded-lg text-[11px] text-amber-200/90 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
                   <strong>คำเตือนการแก้ไขข้อมูล:</strong> ระบบจะอัปเดตและเขียนทับข้อมูลในชีตตามข้อมูลปัจจุบันของคลังหม้อแปลง ({transformers.length} เครื่อง) จะมีหน้าต่างยืนยันก่อนบันทึกเสมอ
                 </div>
@@ -435,7 +435,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               <button
                 onClick={handleRequestSync}
                 disabled={isLoading || !accessToken || !existingSheetInput.trim()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-colors shadow-xs disabled:opacity-50"
               >
                 {isLoading ? (
                   <>
@@ -456,7 +456,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           {activeTab === 'import' && (
             <div className="space-y-3 pt-2">
               <div>
-                <label className="block text-xs font-semibold text-[#ccc] mb-1.5">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   URL หรือ Spreadsheet ID ของ Google Sheets
                 </label>
                 <input
@@ -464,13 +464,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   value={existingSheetInput}
                   onChange={(e) => setExistingSheetInput(e.target.value)}
                   placeholder="https://docs.google.com/spreadsheets/d/1abc.../edit"
-                  className="w-full px-3 py-2 bg-[#171717] border border-[#333] rounded-lg text-xs text-white placeholder-[#666] focus:outline-hidden focus:border-emerald-500"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
 
-              <div className="p-3 bg-[#171717] rounded-lg border border-[#2a2a2a] text-xs text-[#888] space-y-1">
-                <div className="text-white font-medium">รูปแบบหัวคอลัมน์ที่รองรับ:</div>
-                <div className="font-mono text-[10px] text-[#aaa]">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 space-y-1">
+                <div className="text-slate-800 font-medium">รูปแบบหัวคอลัมน์ที่รองรับ:</div>
+                <div className="font-mono text-[10px] text-slate-600">
                   ลำดับ | PEA No. | Serial Number | ยี่ห้อ | ขนาด (kVA) | เฟส | แรงดัน | สถานะ | ตำแหน่งจัดเก็บ
                 </div>
               </div>
@@ -478,7 +478,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               <button
                 onClick={handleRequestImport}
                 disabled={isLoading || !accessToken || !existingSheetInput.trim()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors shadow-md disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-colors shadow-xs disabled:opacity-50"
               >
                 {isLoading ? (
                   <>
@@ -497,9 +497,9 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
           {/* Export Success Result Card */}
           {lastExportResult && (
-            <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-lg flex items-center justify-between gap-3 animate-in fade-in">
-              <div className="flex items-center gap-2 text-xs text-emerald-300 truncate">
-                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2 text-xs text-emerald-800 truncate">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="truncate">
                   พร้อมใช้งาน: <strong>{lastExportResult.title}</strong>
                 </span>
@@ -508,7 +508,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 href={lastExportResult.spreadsheetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold shrink-0 transition-colors shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-2xs"
               >
                 <span>เปิดใน Google Sheets</span>
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -518,10 +518,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-[#222] bg-[#141414] flex items-center justify-end">
+        <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-medium text-[#888] hover:text-white rounded hover:bg-[#222] transition-colors"
+            className="px-4 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors"
           >
             ปิด
           </button>
@@ -530,37 +530,37 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
       {/* Mandatory User Confirmation Dialog */}
       {confirmModal && confirmModal.isOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-[#161616] border border-amber-600/70 rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-amber-950/80 border border-amber-600/60 flex items-center justify-center text-amber-400 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-white tracking-tight">
+                <h4 className="text-sm font-bold text-slate-800 tracking-tight">
                   {confirmModal.title}
                 </h4>
-                <p className="text-xs text-[#bbb] mt-1.5 leading-relaxed">
+                <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
                   {confirmModal.description}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#262626]">
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setConfirmModal(null)}
-                className="px-3.5 py-1.5 text-xs font-medium text-[#888] hover:text-white rounded hover:bg-[#262626] transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
                 onClick={confirmModal.onConfirm}
-                className={`px-4 py-1.5 text-xs font-bold text-white rounded shadow-sm transition-colors ${
+                className={`px-4 py-1.5 text-xs font-bold text-white rounded-xl shadow-xs transition-colors ${
                   confirmModal.actionType === 'sync'
-                    ? 'bg-amber-600 hover:bg-amber-500'
-                    : 'bg-blue-600 hover:bg-blue-500'
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 }`}
               >
                 ยืนยันดำเนินการ

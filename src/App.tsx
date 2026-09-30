@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transformer, TransformerStatus, WarehouseConfig, WarehouseZoneId, TransformerLocationType } from './types';
+import {
+  Transformer,
+  TransformerStatus,
+  WarehouseConfig,
+  WarehouseZoneId,
+  TransformerLocationType,
+  normalizeTransformerStatus,
+  getStatusConfig
+} from './types';
 import { INITIAL_TRANSFORMERS, DEFAULT_WAREHOUSE_CONFIG } from './data/mockTransformers';
 import { WarehouseGrid } from './components/WarehouseGrid';
 import { HoldingArea } from './components/HoldingArea';
@@ -37,36 +45,73 @@ const STORAGE_KEY_CONFIG = 'pea_warehouse_config_v1';
 const STORAGE_KEY_WEBHOOK_URL = 'pea_warehouse_webhook_url_v1';
 const STORAGE_KEY_WEBHOOK_AUTOSYNC = 'pea_warehouse_webhook_autosync_v1';
 
+export function sanitizeTransformer(t: any): Transformer {
+  if (!t || typeof t !== 'object') {
+    return {
+      id: `tr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      peaNo: 'TR-UNKNOWN',
+      serialNo: '',
+      capacityKva: 50,
+      phase: '3-Phase',
+      voltage: '22 kV / 400-230 V',
+      brand: 'Other',
+      status: 'good',
+      slotNumber: null,
+      zone: 'left',
+      locationType: 'holding',
+      receivedDate: new Date().toISOString().slice(0, 10),
+      notes: '',
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+  }
+
+  const slotNum = t.slotNumber !== null && t.slotNumber !== undefined && !isNaN(Number(t.slotNumber))
+    ? Number(t.slotNumber)
+    : null;
+
+  return {
+    ...t,
+    id: t.id ? String(t.id) : `tr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    peaNo: normalizePeaNo(t.peaNo || ''),
+    serialNo: t.serialNo ? String(t.serialNo).trim() : '',
+    capacityKva: Number(t.capacityKva) || 50,
+    phase: t.phase === '1-Phase' ? '1-Phase' : '3-Phase',
+    voltage: t.voltage ? String(t.voltage).trim() : '22 kV / 400-230 V',
+    brand: cleanBrandToEnglish(t.brand || 'Other'),
+    status: normalizeTransformerStatus(t.status),
+    slotNumber: slotNum,
+    zone: t.zone || 'left',
+    locationType: (t.locationType as TransformerLocationType) || (slotNum !== null ? 'grid' : 'holding'),
+    receivedDate: t.receivedDate || new Date().toISOString().slice(0, 10),
+    notes: t.notes ? String(t.notes) : '',
+    repairVendor: t.repairVendor || undefined,
+    repairSentDate: t.repairSentDate || undefined,
+    repairDocNo: t.repairDocNo || undefined,
+    repairExpectedReturn: t.repairExpectedReturn || undefined,
+    updatedAt: t.updatedAt || new Date().toISOString().slice(0, 10),
+  };
+}
+
 export default function App() {
   // 1. State: Transformers list with localStorage persistence
   const [transformers, setTransformers] = useState<Transformer[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
       if (saved) {
-        const parsed: Transformer[] = JSON.parse(saved);
+        const parsed: any[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // If the cached localStorage still has the old mock data (e.g. TR 51-004512 or old tr-02),
-          // migrate automatically to the actual 18 Google Sheet transformers
           const isOldStaleMock = parsed.some(
             (t) => t.peaNo === 'TR 51-004512' || t.peaNo === 'TR 52-008921' || (t.id === 'tr-02' && t.peaNo !== 'TR 51-002342')
           );
           if (!isOldStaleMock) {
-            return parsed.map((t) => ({
-              ...t,
-              peaNo: normalizePeaNo(t.peaNo),
-              brand: cleanBrandToEnglish(t.brand || ''),
-            }));
+            return parsed.map(sanitizeTransformer);
           }
         }
       }
     } catch (e) {
       console.warn('Failed to load from localStorage', e);
     }
-    return INITIAL_TRANSFORMERS.map((t) => ({
-      ...t,
-      peaNo: normalizePeaNo(t.peaNo),
-      brand: cleanBrandToEnglish(t.brand || ''),
-    }));
+    return INITIAL_TRANSFORMERS.map(sanitizeTransformer);
   });
 
   // 2. State: Warehouse Grid Config (columns x rows)
@@ -197,12 +242,33 @@ export default function App() {
 
       lastPulledAtRef.current = Date.now();
 
-      if (res.success && res.transformers && res.transformers.length > 0) {
+      if (res.success && Array.isArray(res.transformers)) {
+        const sanitizedRemote = res.transformers.map(sanitizeTransformer);
+
+        // Safety guard: If sheet is empty (only headers) but user has data in app, DO NOT wipe!
+        if (sanitizedRemote.length === 0 && transformers.length > 0) {
+          setSyncStatus('synced');
+          if (!isAuto) {
+            showNotification('Google Sheet มีเฉพาะหัวตาราง (คงข้อมูลหม้อแปลงที่มีในระบบไว้)');
+          }
+          return;
+        }
+
+        let targetList = sanitizedRemote;
+        // If current app has transformers that are not yet in the sheet, keep them!
+        if (transformers.length > 0 && sanitizedRemote.length > 0) {
+          const sheetPeaSet = new Set(sanitizedRemote.map((t) => (t.peaNo || '').trim().toLowerCase()));
+          const localUnwritten = transformers.filter((t) => !sheetPeaSet.has((t.peaNo || '').trim().toLowerCase()));
+          if (localUnwritten.length > 0) {
+            targetList = [...sanitizedRemote, ...localUnwritten];
+          }
+        }
+
         isSyncingFromRemoteRef.current = true;
-        setTransformers(res.transformers);
+        setTransformers(targetList);
         isRemoteInitializedRef.current = true;
         try {
-          localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(res.transformers));
+          localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(targetList));
         } catch (e) {
           console.warn('Failed to save pulled transformers to localStorage', e);
         }
@@ -212,7 +278,7 @@ export default function App() {
           fetch('/api/transformers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transformers: res.transformers, config }),
+            body: JSON.stringify({ transformers: targetList, config }),
           }).catch(() => {});
         } catch {}
 
@@ -221,18 +287,9 @@ export default function App() {
         setLastSyncTime(nowTime);
         showNotification(
           isAuto
-            ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${res.transformers.length} เครื่อง)`
-            : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${res.transformers.length} เครื่อง)`
+            ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${targetList.length} เครื่อง)`
+            : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${targetList.length} เครื่อง)`
         );
-      } else if (res.success && res.transformers && res.transformers.length === 0) {
-        // Connected successfully, but sheet has 0 items (not an error!)
-        isRemoteInitializedRef.current = true;
-        setSyncStatus('synced');
-        const nowTime = new Date().toLocaleTimeString('th-TH');
-        setLastSyncTime(nowTime);
-        if (!isAuto) {
-          showNotification('เชื่อมต่อ Google Sheets สำเร็จ (ไม่พบรายการหม้อแปลงใหม่ในชีต)');
-        }
       } else if (!isAuto) {
         setSyncStatus('error');
         showNotification(res.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้');
@@ -263,10 +320,30 @@ export default function App() {
         const res = await fetch('/api/transformers');
         if (res.ok) {
           const data = (await res.json()) as any;
-          if (data && data.success && Array.isArray(data.transformers) && data.transformers.length > 0) {
+          if (data && data.success && Array.isArray(data.transformers)) {
             if (!isMounted) return;
+
+            let targetList = data.transformers.map(sanitizeTransformer);
+            // If remote has 0 transformers, check if local storage has existing saved transformers
+            if (targetList.length === 0) {
+              const localSaved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
+              if (localSaved) {
+                try {
+                  const parsed = JSON.parse(localSaved);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    targetList = parsed.map(sanitizeTransformer);
+                    fetch('/api/transformers', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ transformers: targetList, config }),
+                    }).catch(() => {});
+                  }
+                } catch {}
+              }
+            }
+
             isSyncingFromRemoteRef.current = true;
-            setTransformers(data.transformers);
+            setTransformers(targetList);
             if (data.config) {
               setConfig(data.config);
             }
@@ -276,7 +353,7 @@ export default function App() {
             setSyncStatus('synced');
             setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
             try {
-              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(targetList));
             } catch {}
             setTimeout(() => {
               isSyncingFromRemoteRef.current = false;
@@ -313,16 +390,21 @@ export default function App() {
             data.lastUpdated &&
             data.lastUpdated > lastServerVersionRef.current
           ) {
+            // Safety guard: if remote sends 0 transformers, but we have local items and it wasn't an explicit clear, do not wipe!
+            if (data.transformers.length === 0 && !data.allowClear) {
+              return;
+            }
+            const cleanList = data.transformers.map(sanitizeTransformer);
             isSyncingFromRemoteRef.current = true;
             lastServerVersionRef.current = data.lastUpdated;
-            setTransformers(data.transformers);
+            setTransformers(cleanList);
             if (data.config) {
               setConfig(data.config);
             }
             setSyncStatus('synced');
             setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
             try {
-              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(cleanList));
             } catch {}
             setTimeout(() => {
               isSyncingFromRemoteRef.current = false;
@@ -352,16 +434,21 @@ export default function App() {
             data.lastUpdated &&
             data.lastUpdated > lastServerVersionRef.current
           ) {
+            // Safety guard: if remote sends 0 transformers, but we have local items and it wasn't an explicit clear, do not wipe!
+            if (data.transformers.length === 0 && !data.allowClear) {
+              return;
+            }
+            const cleanList = data.transformers.map(sanitizeTransformer);
             isSyncingFromRemoteRef.current = true;
             lastServerVersionRef.current = data.lastUpdated;
-            setTransformers(data.transformers);
+            setTransformers(cleanList);
             if (data.config) {
               setConfig(data.config);
             }
             setSyncStatus('synced');
             setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
             try {
-              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(data.transformers));
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(cleanList));
             } catch {}
             setTimeout(() => {
               isSyncingFromRemoteRef.current = false;
@@ -419,10 +506,6 @@ export default function App() {
     // SAFETY GATE 2: Skip push if the state change came from a remote pull/sync
     if (isSyncingFromRemoteRef.current) {
       isSyncingFromRemoteRef.current = false;
-      return;
-    }
-    // SAFETY GATE 3: Prevent immediate pushback if we just pulled from remote within 6 seconds
-    if (Date.now() - lastPulledAtRef.current < 6000) {
       return;
     }
     // Only push if webhook URL is a valid Webhook endpoint (not a Google Sheet link)
@@ -489,14 +572,15 @@ export default function App() {
       // Query search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const peaStr = (t.peaNo || '').toLowerCase();
         const matchesPea =
-          t.peaNo.toLowerCase().includes(q) ||
-          t.peaNo.replace(/^TR[\s-_]*/i, '').toLowerCase().includes(q);
-        const matchesSn = t.serialNo.toLowerCase().includes(q);
-        const matchesBrand = t.brand.toLowerCase().includes(q);
-        const matchesKva = String(t.capacityKva).includes(q);
-        const matchesNotes = t.notes?.toLowerCase().includes(q) || false;
-        const matchesSlot = t.slotNumber ? String(t.slotNumber) === q : false;
+          peaStr.includes(q) ||
+          peaStr.replace(/^TR[\s-_]*/i, '').includes(q);
+        const matchesSn = (t.serialNo || '').toLowerCase().includes(q);
+        const matchesBrand = (t.brand || '').toLowerCase().includes(q);
+        const matchesKva = String(t.capacityKva || '').includes(q);
+        const matchesNotes = (t.notes || '').toLowerCase().includes(q);
+        const matchesSlot = t.slotNumber !== null && t.slotNumber !== undefined ? String(t.slotNumber) === q : false;
 
         if (!matchesPea && !matchesSn && !matchesBrand && !matchesKva && !matchesNotes && !matchesSlot) {
           return false;
@@ -504,7 +588,7 @@ export default function App() {
       }
 
       // Status filter
-      if (statusFilter !== 'all' && t.status !== statusFilter) {
+      if (statusFilter !== 'all' && normalizeTransformerStatus(t.status) !== statusFilter) {
         return false;
       }
 
@@ -540,7 +624,10 @@ export default function App() {
   }, [filteredTransformers]);
 
   // Handlers for CRUD & Move operations
-  const handleSaveTransformer = (transformer: Transformer) => {
+  const handleSaveTransformer = (rawTransformer: Transformer) => {
+    const transformer = sanitizeTransformer(rawTransformer);
+    isSyncingFromRemoteRef.current = false;
+    let nextList: Transformer[] = [];
     setTransformers((prev) => {
       // If the slot is taken by another transformer in the grid, move that one to holding area
       const targetSlot = transformer.slotNumber;
@@ -562,13 +649,50 @@ export default function App() {
 
       // If it's a new transformer not yet in the array:
       const exists = prev.some((item) => item.id === transformer.id);
-      if (!exists) {
-        return [transformer, ...updated];
-      }
-      return updated;
+      nextList = !exists ? [transformer, ...updated] : updated;
+      try {
+        localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(nextList));
+      } catch {}
+      return nextList;
     });
 
+    // Immediate direct sync to server master state to protect against background pull
+    fetch('/api/transformers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transformers: nextList, config }),
+    })
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data && data.lastUpdated) {
+          lastServerVersionRef.current = data.lastUpdated;
+        }
+      })
+      .catch((e) => console.warn('Server master sync warning on save:', e));
+
     showNotification(`บันทึกหม้อแปลง ${transformer.peaNo} เรียบร้อยแล้ว`);
+
+    // Immediate sync to Google Sheets if webhook connected
+    if (
+      autoSyncWebhook &&
+      webhookUrl &&
+      webhookUrl.trim() &&
+      !webhookUrl.includes('docs.google.com/spreadsheets') &&
+      webhookUrl.includes('/exec')
+    ) {
+      setSyncStatus('syncing');
+      const payload = buildWebhookPayload(nextList, config, 'sync_all');
+      sendWebhook(webhookUrl.trim(), payload)
+        .then((res) => {
+          if (res.success) {
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+          } else {
+            setSyncStatus('error');
+          }
+        })
+        .catch(() => setSyncStatus('error'));
+    }
   };
 
   const handleDeleteTransformer = (id: string) => {
@@ -629,11 +753,11 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
     showNotification('ลบหม้อแปลงทั้งหมดในระบบเรียบร้อยแล้ว');
 
-    // Broadcast immediately to server master state
+    // Broadcast immediately to server master state with explicit allowClear flag
     fetch('/api/transformers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transformers: [], config }),
+      body: JSON.stringify({ transformers: [], config, allowClear: true }),
     })
       .then((r) => r.json())
       .then((data: any) => {
@@ -842,9 +966,9 @@ export default function App() {
       const el = document.getElementById(`slot-cell-left-${slotNum}`) || document.getElementById(`slot-cell-${slotNum}`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('ring-2', 'ring-orange-500', 'bg-orange-950/40');
+        el.classList.add('ring-2', 'ring-violet-500', 'bg-violet-100/70');
         setTimeout(() => {
-          el.classList.remove('ring-2', 'ring-orange-500', 'bg-orange-950/40');
+          el.classList.remove('ring-2', 'ring-violet-500', 'bg-violet-100/70');
         }, 2000);
       }
 
@@ -917,51 +1041,51 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#e5e5e5] flex flex-col font-sans selection:bg-orange-600 selection:text-white">
+    <div className="min-h-screen bg-[#e3e8e5] text-[#26322e] flex flex-col font-sans selection:bg-violet-200 selection:text-violet-950">
       {/* Top Application Navbar */}
-      <header className="bg-[#0a0a0a] border-b border-[#222] sticky top-0 z-30 shadow-lg">
+      <header className="bg-[#d8e1dc]/95 backdrop-blur-md border-b border-[#c2cdc7] sticky top-0 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Brand & Warehouse Title */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded bg-orange-500 flex items-center justify-center text-black font-black shadow-md shrink-0">
-              <Zap className="w-5 h-5 fill-black text-black" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#d8cef0] border border-[#b9aad9] flex items-center justify-center text-[#4c377a] font-black shadow-2xs shrink-0">
+              <Zap className="w-5 h-5 fill-[#6d53a6] text-[#4c377a]" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded bg-orange-950/60 text-orange-400 border border-orange-800/80">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-md bg-[#e5ddf5] text-[#523b85] border border-[#c8bce3]">
                   TRANSFORMER LOGISTICS
                 </span>
-                <span className="text-xs text-[#777] hidden sm:inline">
+                <span className="text-xs text-[#52615a] hidden sm:inline">
                   ระบบบริหารจัดการผังคลังและจุดวาง
                 </span>
               </div>
-              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+              <h1 className="text-lg sm:text-xl font-bold text-[#1f2b27] tracking-tight truncate">
                 {config.warehouseName}
               </h1>
             </div>
           </div>
 
           {/* Action Toolbar */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {/* View Mode Switcher */}
-            <div className="flex items-center p-0.5 bg-[#121212] rounded border border-[#262626]">
+            <div className="flex items-center p-0.5 bg-[#cad4cf] rounded-xl border border-[#b7c3bd]">
               <button
                 onClick={() => setViewMode('grid')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   viewMode === 'grid'
-                    ? 'bg-[#222] text-orange-400 border border-[#333] shadow-xs'
-                    : 'text-[#888] hover:text-[#e5e5e5]'
+                    ? 'bg-[#f2f0e8] text-[#4c377a] border border-[#c8c0d8] shadow-2xs'
+                    : 'text-[#495751] hover:text-[#1f2b27]'
                 }`}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
-                <span>ผังคลัง 2 ชุด</span>
+                <span>ผังคลัง</span>
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                   viewMode === 'table'
-                    ? 'bg-[#222] text-orange-400 border border-[#333] shadow-xs'
-                    : 'text-[#888] hover:text-[#e5e5e5]'
+                    ? 'bg-[#f2f0e8] text-[#4c377a] border border-[#c8c0d8] shadow-2xs'
+                    : 'text-[#495751] hover:text-[#1f2b27]'
                 }`}
               >
                 <List className="w-3.5 h-3.5" />
@@ -973,16 +1097,16 @@ export default function App() {
             <button
               onClick={() => handlePullFromSheets(false)}
               disabled={isPullingSheets}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl transition-all border ${
                 isPullingSheets
-                  ? 'bg-amber-950/50 text-amber-300 border-amber-600/70 cursor-wait'
-                  : 'bg-[#1a1a1a] text-[#e5e5e5] border-[#333] hover:bg-[#252525] hover:border-emerald-600/60 hover:text-emerald-300'
+                  ? 'bg-[#f5ebd6] text-[#785314] border-[#dfc594] cursor-wait'
+                  : 'bg-[#eff1ec] text-[#2b3b35] border-[#bdcac2] hover:bg-[#e1f0e9] hover:border-[#9ecab5] hover:text-[#1f523b]'
               }`}
               title="ดึงข้อมูลล่าสุดจาก Google Sheets (ระบบจะดึงให้อัตโนมัติทุกครั้งที่เปิดเวป หรือกดเพื่อดึงทันที)"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 text-emerald-400 ${
-                  isPullingSheets ? 'animate-spin text-amber-400' : ''
+                className={`w-3.5 h-3.5 text-[#388262] ${
+                  isPullingSheets ? 'animate-spin text-[#b87d1e]' : ''
                 }`}
               />
               <span>{isPullingSheets ? 'กำลังดึงข้อมูล...' : 'ดึงข้อมูลจาก Sheets'}</span>
@@ -991,14 +1115,14 @@ export default function App() {
             {/* Google Sheets Integration & Live Status */}
             <button
               onClick={() => setIsWebhookModalOpen(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl transition-all border ${
                 syncStatus === 'syncing'
-                  ? 'bg-amber-950/40 text-amber-300 border-amber-600/70 animate-pulse'
+                  ? 'bg-[#f5ebd6] text-[#785314] border-[#dfc594] animate-pulse'
                   : syncStatus === 'synced'
-                  ? 'bg-emerald-950/40 text-emerald-300 border-emerald-700/60 hover:bg-emerald-900/50'
+                  ? 'bg-[#deefe7] text-[#1f543d] border-[#a8d4bf] hover:bg-[#d2e8de]'
                   : syncStatus === 'error'
-                  ? 'bg-rose-950/40 text-rose-300 border-rose-700/60 hover:bg-rose-900/50'
-                  : 'bg-[#1a1a1a] text-[#e5e5e5] border-[#333] hover:bg-[#252525]'
+                  ? 'bg-[#f5dfe2] text-[#75232c] border-[#dfaab1] hover:bg-[#eed2d6]'
+                  : 'bg-[#eff1ec] text-[#2b3b35] border-[#bdcac2] hover:bg-[#e6ebe8]'
               }`}
               title={`Google Sheets: ${
                 syncStatus === 'synced'
@@ -1010,14 +1134,14 @@ export default function App() {
                   : 'ตั้งค่าและซิงค์ข้อมูล Google Sheets'
               }`}
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <FileSpreadsheet className="w-4 h-4 text-[#388262]" />
               <span>Google Sheets</span>
               <span
                 className={`w-2 h-2 rounded-full ${
                   syncStatus === 'syncing'
-                    ? 'bg-amber-400 animate-ping'
+                    ? 'bg-amber-500 animate-ping'
                     : syncStatus === 'synced'
-                    ? 'bg-emerald-400'
+                    ? 'bg-emerald-500'
                     : syncStatus === 'error'
                     ? 'bg-rose-500'
                     : 'bg-emerald-500'
@@ -1028,17 +1152,17 @@ export default function App() {
             {/* Export Report Button (Excel & PDF) */}
             <button
               onClick={() => setIsExportModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-[#1a1a1a] border border-[#333] rounded hover:bg-[#252525] text-[#e5e5e5] transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#e6e0f2] hover:bg-[#dcd3ed] border border-[#c5bae0] rounded-xl text-[#463370] transition-colors shadow-2xs"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span>EXPORT รายงาน (EXCEL / PDF)</span>
+              <FileSpreadsheet className="w-4 h-4 text-[#5e4591]" />
+              <span>EXPORT รายงาน</span>
             </button>
 
             {/* Grid Layout Settings */}
             <button
               onClick={() => setIsConfigModalOpen(true)}
               title="ตั้งค่าขนาดผังคลัง"
-              className="p-1.5 text-[#888] hover:text-white bg-[#1a1a1a] border border-[#333] hover:bg-[#252525] rounded transition-colors"
+              className="p-1.5 text-[#495751] hover:text-[#1f2b27] bg-[#eff1ec] border border-[#bdcac2] hover:bg-[#e4e9e5] rounded-xl transition-colors"
             >
               <Sliders className="w-4 h-4" />
             </button>
@@ -1047,7 +1171,7 @@ export default function App() {
             <button
               onClick={handleResetData}
               title="รีเซ็ตข้อมูลตัวอย่าง"
-              className="p-1.5 text-[#888] hover:text-white bg-[#1a1a1a] border border-[#333] hover:bg-[#252525] rounded transition-colors"
+              className="p-1.5 text-[#495751] hover:text-[#1f2b27] bg-[#eff1ec] border border-[#bdcac2] hover:bg-[#e4e9e5] rounded-xl transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -1057,15 +1181,15 @@ export default function App() {
 
       {/* Auto-pulling from Sheets status banner */}
       {isPullingSheets && (
-        <div className="bg-emerald-950/70 border-b border-emerald-700/50 text-emerald-200 text-xs py-2 px-4 shadow-sm animate-in fade-in duration-200">
+        <div className="bg-[#dceee5] border-b border-[#b0d8c5] text-[#1f523b] text-xs py-2 px-4 shadow-2xs animate-in fade-in duration-200">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400 shrink-0" />
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#2e7858] shrink-0" />
               <span className="font-semibold">
                 กำลังดึงข้อมูลล่าสุดจาก Google Sheets (ทำงานอัตโนมัติทุกครั้งที่เปิดเวป)...
               </span>
             </div>
-            <span className="text-[11px] text-emerald-400/80 font-mono hidden sm:inline">
+            <span className="text-[11px] text-[#386b54] font-mono hidden sm:inline">
               ซิงค์รหัส TR และตำแหน่งจุดวางหม้อแปลง
             </span>
           </div>
@@ -1074,14 +1198,14 @@ export default function App() {
 
       {/* Floating Notification Toast */}
       {notification && (
-        <div className="fixed bottom-5 right-5 z-50 bg-[#111] text-[#e5e5e5] text-xs px-4 py-2.5 rounded-lg shadow-2xl border border-[#333] flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <Info className="w-4 h-4 text-orange-400" />
-          <span>{notification}</span>
+        <div className="fixed bottom-5 right-5 z-50 bg-[#f2f0e8] text-[#26322e] text-xs px-4 py-2.5 rounded-xl shadow-lg border border-[#b8c4be] flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Info className="w-4 h-4 text-[#654ea3]" />
+          <span className="font-medium">{notification}</span>
         </div>
       )}
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5 flex-1 w-full">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4 flex-1 w-full">
         {/* 1. Status Statistics Bar */}
         <StatsBar
           transformers={transformers}
@@ -1152,11 +1276,11 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#0a0a0a] border-t border-[#222] py-4 text-center text-xs text-[#666] no-print">
+      <footer className="bg-[#d8e1dc] border-t border-[#c2cdc7] py-4 text-center text-xs text-[#4a5852] no-print">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>ผังคลังและจุดวางหม้อแปลงไฟฟ้า แผนกหม้อแปลง กฟภ. (PEA Transformer Warehouse Manager)</span>
-          <div className="flex items-center gap-4 text-[#888]">
-            <span>แยกสีสถานะ: เขียว (ดี) | เหลือง (รอซ่อมเล็กน้อย) | ส้ม (รอซ่อมหนัก) | แดง (ชำรุด)</span>
+          <span className="font-medium">ผังคลังและจุดวางหม้อแปลงไฟฟ้า แผนกหม้อแปลง กฟภ. (PEA Transformer Warehouse Manager)</span>
+          <div className="flex items-center gap-4 text-[#52615a]">
+            <span>แยกสีสถานะพาสเทล: เขียว (ดี) | เหลือง (รอซ่อมเล็กน้อย) | ส้ม (รอซ่อมหนัก) | แดง (ชำรุด)</span>
           </div>
         </div>
       </footer>

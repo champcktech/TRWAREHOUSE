@@ -29,24 +29,431 @@ interface MasterState {
   transformers: any[];
   config: any;
   lastUpdated: number;
+  lastLocalMutationTime: number;
 }
 
 const masterState: MasterState = {
   transformers: [],
   config: null,
   lastUpdated: Date.now(),
+  lastLocalMutationTime: 0,
 };
 
-// Set of active SSE client response connections for instant real-time synchronization
 const sseClients = new Set<express.Response>();
 
-function broadcastMasterState() {
+// Helper to normalize PEA number so that TR is always in front of the number
+function normalizePeaNo(pea: string): string {
+  if (!pea) return '';
+  const trimmed = pea.trim();
+  if (!trimmed) return '';
+  if (/^PEA[\s-_]*TR[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^PEA[\s-_]*TR[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+  if (/^TR[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^TR[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+  if (/^PEA[\s-_]*/i.test(trimmed)) {
+    const numPart = trimmed.replace(/^PEA[\s-_]*/i, '').trim();
+    return `TR ${numPart}`;
+  }
+  return `TR ${trimmed}`;
+}
+
+// Helper to clean brand name into English
+function cleanBrandToEnglish(brandName: string): string {
+  if (!brandName) return 'Other';
+  const match = brandName.match(/\(([^)]+)\)/);
+  if (match && match[1]) return match[1].trim();
+  const mapping: Record<string, string> = {
+    'เอกรัฐ': 'Ekarat',
+    'ถิรไทย': 'Tirathai',
+    'เจริญชัย': 'Charoenchai',
+    'พรีไซซ': 'Precise',
+    'คิวทีซี': 'QTC',
+    'เอเชีย แทรฟโฟ': 'Asia Trafo',
+    'หม้อแปลงไทย': 'Thai Trafo',
+    'บางกอกเทรโฟ': 'Bangkok Trafo',
+    'เอบีบี': 'ABB',
+    'ชไนเดอร์': 'Schneider',
+    'ซีเมนส์': 'Siemens',
+    'อื่นๆ': 'Other',
+  };
+  for (const [thai, eng] of Object.entries(mapping)) {
+    if (brandName.includes(thai)) return eng;
+  }
+  const stripped = brandName.replace(/[\u0E00-\u0E7F]+/g, '').trim();
+  return stripped || brandName;
+}
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (c === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+let lastSheetFetchTime = 0;
+let lastSheetSignature = '';
+let activeSheetFetchPromise: Promise<any> | null = null;
+
+async function fetchGoogleSheetsTransformers(
+  spreadsheetId = '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco',
+  force = false
+) {
+  // If not forced and checked within last 2500ms and we have data, return cached
+  if (
+    !force &&
+    Date.now() - lastSheetFetchTime < 2500 &&
+    masterState.transformers &&
+    masterState.transformers.length > 0
+  ) {
+    return {
+      success: true,
+      count: masterState.transformers.length,
+      transformers: masterState.transformers,
+      lastUpdated: masterState.lastUpdated,
+      cached: true,
+    };
+  }
+
+  if (activeSheetFetchPromise) {
+    return activeSheetFetchPromise;
+  }
+
+  activeSheetFetchPromise = (async () => {
+    try {
+      const candidateSheets = [
+        'ข้อมูลหม้อแปลง',
+        'ข้อมูลหม้อแปลงทั้งหมด',
+        'แผ่นงาน1',
+        'แผ่นงาน 1',
+        'Sheet1',
+        'Sheet 1',
+        'หม้อแปลง',
+        'หม้อแปลงไฟฟ้า',
+        'คลังหม้อแปลง',
+        'Data',
+      ];
+      let csvText = '';
+      let usedSheetName = '';
+
+      for (const sName of candidateSheets) {
+        try {
+          const cacheBuster = Date.now();
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&sheet=${encodeURIComponent(
+            sName
+          )}&_=${cacheBuster}`;
+          const gvizResp = await fetch(gvizUrl, {
+            redirect: 'follow',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              Pragma: 'no-cache',
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (gvizResp.ok) {
+            const txt = await gvizResp.text();
+            if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
+              csvText = txt;
+              usedSheetName = sName;
+              break;
+            }
+          }
+        } catch {
+          // try next tab
+        }
+      }
+
+      if (!csvText) {
+        try {
+          const cacheBuster = Date.now();
+          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&_=${cacheBuster}`;
+          const gvizResp = await fetch(gvizUrl, {
+            redirect: 'follow',
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              Pragma: 'no-cache',
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (gvizResp.ok) {
+            const txt = await gvizResp.text();
+            if (txt && !txt.includes('<!DOCTYPE html>')) {
+              csvText = txt;
+              usedSheetName = 'DefaultSheet';
+            }
+          }
+        } catch {}
+      }
+
+      if (!csvText) {
+        return {
+          success: false,
+          count: masterState.transformers.length,
+          transformers: masterState.transformers,
+          lastUpdated: masterState.lastUpdated,
+          message: 'ไม่สามารถดึงข้อมูล CSV จาก Google Sheets ได้',
+        };
+      }
+
+      const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length <= 1) {
+        lastSheetFetchTime = Date.now();
+        // If the system already has transformers (e.g. user added them in the app),
+        // NEVER wipe them out just because Google Sheet is empty or only has table headers!
+        if (masterState.transformers.length > 0) {
+          return {
+            success: true,
+            count: masterState.transformers.length,
+            transformers: masterState.transformers,
+            sheetName: usedSheetName,
+            spreadsheetId,
+            lastUpdated: masterState.lastUpdated,
+            message: 'Google Sheet มีเฉพาะหัวตาราง (คงข้อมูลหม้อแปลงที่มีในระบบไว้)',
+          };
+        }
+
+        // Both are empty
+        return {
+          success: true,
+          count: 0,
+          transformers: [],
+          sheetName: usedSheetName,
+          spreadsheetId,
+          lastUpdated: masterState.lastUpdated,
+        };
+      }
+
+      const headerRow = parseCsvLine(lines[0]).map((h) => (h || '').trim().toLowerCase());
+      let peaCol = -1,
+        snCol = -1,
+        brandCol = -1,
+        kvaCol = -1,
+        phaseCol = -1;
+      let voltCol = -1,
+        statusCol = -1,
+        locationCol = -1,
+        dateCol = -1,
+        updateCol = -1,
+        notesCol = -1;
+
+      headerRow.forEach((h, idx) => {
+        if (h.includes('pea') || h.includes('รหัส') || h.includes('หมายเลข')) {
+          if (peaCol === -1) peaCol = idx;
+        } else if (h.includes('serial') || h.includes('s/n') || h.includes('sn') || h.includes('ซีเรียล')) {
+          if (snCol === -1) snCol = idx;
+        } else if (h.includes('ยี่ห้อ') || h.includes('brand') || h.includes('ผู้ผลิต')) {
+          if (brandCol === -1) brandCol = idx;
+        } else if (h.includes('kva') || h.includes('ขนาด') || h.includes('กำลัง')) {
+          if (kvaCol === -1) kvaCol = idx;
+        } else if (h.includes('เฟส') || h.includes('phase')) {
+          if (phaseCol === -1) phaseCol = idx;
+        } else if (h.includes('แรงดัน') || h.includes('volt') || h.includes('kv')) {
+          if (voltCol === -1) voltCol = idx;
+        } else if (h.includes('สถานะ') || h.includes('status') || h.includes('สภาพ')) {
+          if (statusCol === -1) statusCol = idx;
+        } else if (h.includes('ตำแหน่ง') || h.includes('location') || h.includes('ช่อง') || h.includes('โซน')) {
+          if (locationCol === -1) locationCol = idx;
+        } else if (h.includes('รับเข้า') || h.includes('date') || h.includes('วันที่')) {
+          if (dateCol === -1) dateCol = idx;
+        } else if (h.includes('อัปเดต') || h.includes('แก้ไข') || h.includes('update')) {
+          if (updateCol === -1) updateCol = idx;
+        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark') || h.includes('รายละเอียด')) {
+          if (notesCol === -1) notesCol = idx;
+        }
+      });
+
+      const hasOrderCol = headerRow[0]?.includes('ลำดับ') || headerRow[0]?.includes('no') || headerRow[0] === '#';
+      const offset = hasOrderCol ? 1 : 0;
+      if (peaCol === -1) peaCol = offset;
+      if (snCol === -1) snCol = offset + 1;
+      if (brandCol === -1) brandCol = offset + 2;
+      if (kvaCol === -1) kvaCol = offset + 3;
+      if (phaseCol === -1) phaseCol = offset + 4;
+      if (voltCol === -1) voltCol = offset + 5;
+      if (statusCol === -1) statusCol = offset + 6;
+      if (locationCol === -1) locationCol = offset + 7;
+      if (dateCol === -1) dateCol = offset + 8;
+      if (updateCol === -1) updateCol = offset + 9;
+      if (notesCol === -1) notesCol = offset + 10;
+
+      const dataRows = lines.slice(1);
+      const parsedTransformers: any[] = [];
+
+      dataRows.forEach((line, idx) => {
+        const row = parseCsvLine(line);
+        if (!row || row.length < 2) return;
+
+        const rawPeaNo = (row[peaCol] || '').trim();
+        if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.' || rawPeaNo.toLowerCase() === 'pea no.') return;
+
+        const peaNo = normalizePeaNo(rawPeaNo);
+        const serialNo = (row[snCol] || `SN-${idx + 1}`).trim();
+        const brand = cleanBrandToEnglish(row[brandCol] || 'Other');
+        const capacityKva = parseInt((row[kvaCol] || '50').replace(/[^0-9]/g, ''), 10) || 50;
+        const phaseStr = (row[phaseCol] || '').toLowerCase();
+        const phase = phaseStr.includes('1') ? '1-Phase' : '3-Phase';
+        const voltage = (row[voltCol] || '22 kV / 400-230 V').trim();
+
+        const statusStr = (row[statusCol] || '').toLowerCase();
+        let status: 'good' | 'minor_repair' | 'major_repair' | 'damaged' = 'good';
+        if (
+          statusStr.includes('เล็กน้อย') ||
+          statusStr.includes('minor') ||
+          statusStr.includes('เหลือง') ||
+          statusStr.includes('yellow')
+        ) {
+          status = 'minor_repair';
+        } else if (
+          statusStr.includes('หนัก') ||
+          statusStr.includes('major') ||
+          statusStr.includes('ส้ม') ||
+          statusStr.includes('orange')
+        ) {
+          status = 'major_repair';
+        } else if (
+          statusStr.includes('ซาก') ||
+          statusStr.includes('จำหน่าย') ||
+          statusStr.includes('damaged') ||
+          statusStr.includes('แดง') ||
+          statusStr.includes('red') ||
+          statusStr.includes('ชำรุด') ||
+          statusStr.includes('เสียหาย')
+        ) {
+          status = 'damaged';
+        } else {
+          status = 'good';
+        }
+
+        const locationStr = (row[locationCol] || '').trim();
+        let slotNumber: number | null = null;
+        let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
+
+        if (locationStr.includes('คัดแยก') || locationStr.includes('triage')) {
+          locationType = 'triage';
+          slotNumber = null;
+        } else if (
+          locationStr.includes('ส่งซ่อม') ||
+          locationStr.includes('repair') ||
+          locationStr.includes('โรงงาน')
+        ) {
+          locationType = 'repair';
+          slotNumber = null;
+        } else if (
+          locationStr.includes('รอขาย') ||
+          locationStr.includes('sale') ||
+          locationStr.includes('ประมูล')
+        ) {
+          locationType = 'sale';
+          slotNumber = null;
+        } else if (locationStr.includes('พักรอ') || locationStr.includes('holding')) {
+          locationType = 'holding';
+          slotNumber = null;
+        } else {
+          const match = locationStr.match(/\b([0-9]{1,3})\b/);
+          if (match && match[1]) {
+            slotNumber = parseInt(match[1], 10);
+            locationType = 'grid';
+          } else {
+            slotNumber = null;
+            locationType = 'holding';
+          }
+        }
+
+        const receivedDate = (row[dateCol] || new Date().toISOString().split('T')[0]).trim();
+        const updatedAt = (row[updateCol] || new Date().toISOString().split('T')[0]).trim();
+        const notes = (row[notesCol] || '').trim();
+
+        const cleanPeaId = peaNo.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+        parsedTransformers.push({
+          id: `tr-${cleanPeaId}`,
+          peaNo,
+          serialNo,
+          brand,
+          capacityKva,
+          phase,
+          voltage,
+          status,
+          slotNumber,
+          locationType,
+          receivedDate,
+          updatedAt,
+          notes,
+        });
+      });
+
+      lastSheetFetchTime = Date.now();
+
+      // Grace period protection: if a user recently added, edited, or moved a transformer in the app (within 30 seconds),
+      // ensure we do not drop transformers that the sheet has not recorded yet!
+      const isRecentlyMutatedLocally = Date.now() - (masterState.lastLocalMutationTime || 0) < 30000;
+      if (isRecentlyMutatedLocally && masterState.transformers.length > 0) {
+        const sheetPeaSet = new Set(parsedTransformers.map((t) => (t.peaNo || '').trim().toLowerCase()));
+        const unwrittenLocal = masterState.transformers.filter(
+          (t) => !sheetPeaSet.has((t.peaNo || '').trim().toLowerCase())
+        );
+        if (unwrittenLocal.length > 0) {
+          parsedTransformers.push(...unwrittenLocal);
+        }
+      }
+
+      const newSignature = parsedTransformers
+        .map((t) => `${t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
+        .sort()
+        .join(';');
+
+      if (newSignature !== lastSheetSignature || masterState.transformers.length !== parsedTransformers.length) {
+        lastSheetSignature = newSignature;
+        masterState.transformers = parsedTransformers;
+        masterState.lastUpdated = Date.now();
+        broadcastMasterState();
+      }
+
+      return {
+        success: true,
+        count: parsedTransformers.length,
+        transformers: parsedTransformers,
+        sheetName: usedSheetName,
+        spreadsheetId,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        timestamp: new Date().toLocaleTimeString('th-TH'),
+        lastUpdated: masterState.lastUpdated,
+      };
+    } finally {
+      activeSheetFetchPromise = null;
+    }
+  })();
+
+  return activeSheetFetchPromise;
+}
+
+function broadcastMasterState(allowClear = false) {
   if (sseClients.size === 0) return;
   const payload = JSON.stringify({
     type: 'sync',
     transformers: masterState.transformers,
     config: masterState.config,
     lastUpdated: masterState.lastUpdated,
+    allowClear,
   });
   const message = `data: ${payload}\n\n`;
   for (const client of Array.from(sseClients)) {
@@ -83,76 +490,6 @@ async function startServer() {
   app.all('/api/sheets-pull', async (req, res) => {
     const webhookUrl = (req.body?.webhookUrl || req.query?.webhookUrl || '') as string;
     let spreadsheetId = (req.body?.spreadsheetId || req.query?.spreadsheetId || '') as string;
-
-    // Helper to normalize PEA number so that TR is always in front of the number
-    function normalizePeaNo(pea: string): string {
-      if (!pea) return '';
-      const trimmed = pea.trim();
-      if (!trimmed) return '';
-      if (/^PEA[\s-_]*TR[\s-_]*/i.test(trimmed)) {
-        const numPart = trimmed.replace(/^PEA[\s-_]*TR[\s-_]*/i, '').trim();
-        return `TR ${numPart}`;
-      }
-      if (/^TR[\s-_]*/i.test(trimmed)) {
-        const numPart = trimmed.replace(/^TR[\s-_]*/i, '').trim();
-        return `TR ${numPart}`;
-      }
-      if (/^PEA[\s-_]*/i.test(trimmed)) {
-        const numPart = trimmed.replace(/^PEA[\s-_]*/i, '').trim();
-        return `TR ${numPart}`;
-      }
-      return `TR ${trimmed}`;
-    }
-
-    // Helper to clean brand name into English
-    function cleanBrandToEnglish(brandName: string): string {
-      if (!brandName) return 'Other';
-      const match = brandName.match(/\(([^)]+)\)/);
-      if (match && match[1]) return match[1].trim();
-      const mapping: Record<string, string> = {
-        'เอกรัฐ': 'Ekarat',
-        'ถิรไทย': 'Tirathai',
-        'เจริญชัย': 'Charoenchai',
-        'พรีไซซ': 'Precise',
-        'คิวทีซี': 'QTC',
-        'เอเชีย แทรฟโฟ': 'Asia Trafo',
-        'หม้อแปลงไทย': 'Thai Trafo',
-        'บางกอกเทรโฟ': 'Bangkok Trafo',
-        'เอบีบี': 'ABB',
-        'ชไนเดอร์': 'Schneider',
-        'ซีเมนส์': 'Siemens',
-        'อื่นๆ': 'Other',
-      };
-      for (const [thai, eng] of Object.entries(mapping)) {
-        if (brandName.includes(thai)) return eng;
-      }
-      const stripped = brandName.replace(/[\u0E00-\u0E7F]+/g, '').trim();
-      return stripped || brandName;
-    }
-
-    function parseCsvLine(line: string): string[] {
-      const result: string[] = [];
-      let cur = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const c = line[i];
-        if (c === '"') {
-          if (inQuotes && line[i + 1] === '"') {
-            cur += '"';
-            i++;
-          } else {
-            inQuotes = !inQuotes;
-          }
-        } else if (c === ',' && !inQuotes) {
-          result.push(cur.trim());
-          cur = '';
-        } else {
-          cur += c;
-        }
-      }
-      result.push(cur.trim());
-      return result;
-    }
 
     try {
       // 1. If spreadsheetId is directly a Google Sheets URL or ID, extract it
@@ -261,282 +598,24 @@ async function startServer() {
         spreadsheetId = '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco';
       }
 
-      // 3. Fetch CSV from Google Sheets via Google Visualization API (GViz)
-      // Try sheet tabs: Thai & English common names
-      const candidateSheets = [
-        'ข้อมูลหม้อแปลง',
-        'ข้อมูลหม้อแปลงทั้งหมด',
-        'แผ่นงาน1',
-        'แผ่นงาน 1',
-        'Sheet1',
-        'Sheet 1',
-        'หม้อแปลง',
-        'หม้อแปลงไฟฟ้า',
-        'คลังหม้อแปลง',
-        'Data',
-      ];
-      let csvText = '';
-      let usedSheetName = '';
-
-      for (const sName of candidateSheets) {
-        try {
-          // Add cachebuster to prevent Google from returning stale cached data
-          const cacheBuster = Date.now();
-          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&sheet=${encodeURIComponent(
-            sName
-          )}&_=${cacheBuster}`;
-          const gvizResp = await fetch(gvizUrl, {
-            redirect: 'follow',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              Pragma: 'no-cache',
-            },
-            signal: AbortSignal.timeout(5000),
-          });
-          if (gvizResp.ok) {
-            const txt = await gvizResp.text();
-            if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
-              csvText = txt;
-              usedSheetName = sName;
-              break;
-            }
-          }
-        } catch (sheetErr) {
-          console.warn(`[Sheets-Pull] Failed tab ${sName}:`, sheetErr);
-        }
-      }
-
-      // If specific tab names failed, try querying default sheet without &sheet= param
-      if (!csvText) {
-        try {
-          const cacheBuster = Date.now();
-          const gvizUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv;reqId:${cacheBuster}&_=${cacheBuster}`;
-          const gvizResp = await fetch(gvizUrl, {
-            redirect: 'follow',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              Pragma: 'no-cache',
-            },
-            signal: AbortSignal.timeout(5000),
-          });
-          if (gvizResp.ok) {
-            const txt = await gvizResp.text();
-            if (txt && txt.length > 50 && !txt.includes('<!DOCTYPE html>')) {
-              csvText = txt;
-              usedSheetName = 'DefaultSheet';
-            }
-          }
-        } catch (sheetErr) {
-          console.warn('[Sheets-Pull] Failed default tab fetch:', sheetErr);
-        }
-      }
-
-      if (!csvText) {
-        return res.status(404).json({
-          success: false,
-          message: 'ไม่สามารถดึงข้อมูล CSV จาก Google Sheets ได้ (กรุณาตรวจสอบว่าแชร์ชีต หรือเปิดการเข้าถึง "ทุกคนที่มีลิงก์มีสิทธิ์อ่าน")',
-        });
-      }
-
-      const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      if (lines.length <= 1) {
-        return res.json({
-          success: true,
-          count: 0,
-          transformers: [],
-          spreadsheetId,
-          sheetName: usedSheetName,
-          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
-          timestamp: new Date().toLocaleTimeString('th-TH'),
-          message: 'แผ่นงานใน Google Sheets ยังไม่มีข้อมูลหม้อแปลง (พร้อมรับข้อมูลใหม่)',
-        });
-      }
-
-      // Dynamic header mapping from Row 0 to support any column ordering or missing "ลำดับ" column
-      const headerRow = parseCsvLine(lines[0]).map((h) => (h || '').trim().toLowerCase());
-      let peaCol = -1;
-      let snCol = -1;
-      let brandCol = -1;
-      let kvaCol = -1;
-      let phaseCol = -1;
-      let voltCol = -1;
-      let statusCol = -1;
-      let locationCol = -1;
-      let dateCol = -1;
-      let updateCol = -1;
-      let notesCol = -1;
-
-      headerRow.forEach((h, idx) => {
-        if (h.includes('pea') || h.includes('รหัส') || h.includes('หมายเลข')) {
-          if (peaCol === -1) peaCol = idx;
-        } else if (h.includes('serial') || h.includes('s/n') || h.includes('sn') || h.includes('ซีเรียล')) {
-          if (snCol === -1) snCol = idx;
-        } else if (h.includes('ยี่ห้อ') || h.includes('brand') || h.includes('ผู้ผลิต')) {
-          if (brandCol === -1) brandCol = idx;
-        } else if (h.includes('kva') || h.includes('ขนาด') || h.includes('กำลัง')) {
-          if (kvaCol === -1) kvaCol = idx;
-        } else if (h.includes('เฟส') || h.includes('phase')) {
-          if (phaseCol === -1) phaseCol = idx;
-        } else if (h.includes('แรงดัน') || h.includes('volt') || h.includes('kv')) {
-          if (voltCol === -1) voltCol = idx;
-        } else if (h.includes('สถานะ') || h.includes('status') || h.includes('สภาพ')) {
-          if (statusCol === -1) statusCol = idx;
-        } else if (h.includes('ตำแหน่ง') || h.includes('location') || h.includes('ช่อง') || h.includes('โซน')) {
-          if (locationCol === -1) locationCol = idx;
-        } else if (h.includes('รับเข้า') || h.includes('date') || h.includes('วันที่')) {
-          if (dateCol === -1) dateCol = idx;
-        } else if (h.includes('อัปเดต') || h.includes('แก้ไข') || h.includes('update')) {
-          if (updateCol === -1) updateCol = idx;
-        } else if (h.includes('หมายเหตุ') || h.includes('note') || h.includes('remark') || h.includes('รายละเอียด')) {
-          if (notesCol === -1) notesCol = idx;
-        }
-      });
-
-      // Fallback indices if header names didn't match
-      const hasOrderCol = headerRow[0]?.includes('ลำดับ') || headerRow[0]?.includes('no') || headerRow[0] === '#';
-      const offset = hasOrderCol ? 1 : 0;
-      if (peaCol === -1) peaCol = offset;
-      if (snCol === -1) snCol = offset + 1;
-      if (brandCol === -1) brandCol = offset + 2;
-      if (kvaCol === -1) kvaCol = offset + 3;
-      if (phaseCol === -1) phaseCol = offset + 4;
-      if (voltCol === -1) voltCol = offset + 5;
-      if (statusCol === -1) statusCol = offset + 6;
-      if (locationCol === -1) locationCol = offset + 7;
-      if (dateCol === -1) dateCol = offset + 8;
-      if (updateCol === -1) updateCol = offset + 9;
-      if (notesCol === -1) notesCol = offset + 10;
-
-      const dataRows = lines.slice(1);
-      const parsedTransformers: any[] = [];
-
-      dataRows.forEach((line, idx) => {
-        const row = parseCsvLine(line);
-        if (!row || row.length < 2) return;
-
-        const rawPeaNo = (row[peaCol] || '').trim();
-        if (!rawPeaNo || rawPeaNo === 'รหัส PEA No.' || rawPeaNo.toLowerCase() === 'pea no.') return;
-
-        const peaNo = normalizePeaNo(rawPeaNo);
-        const serialNo = (row[snCol] || `SN-${idx + 1}`).trim();
-        const brand = cleanBrandToEnglish(row[brandCol] || 'Other');
-        const capacityKva = parseInt(((row[kvaCol] || '50').replace(/[^0-9]/g, '')), 10) || 50;
-        const phaseStr = (row[phaseCol] || '').toLowerCase();
-        const phase = phaseStr.includes('1') ? '1-Phase' : '3-Phase';
-        const voltage = (row[voltCol] || '22 kV / 400-230 V').trim();
-
-        // Parse status with proper precedence (minor & major BEFORE damaged!)
-        const statusStr = (row[statusCol] || '').toLowerCase();
-        let status: 'good' | 'minor_repair' | 'major_repair' | 'damaged' = 'good';
-        if (
-          statusStr.includes('เล็กน้อย') ||
-          statusStr.includes('minor') ||
-          statusStr.includes('เหลือง') ||
-          statusStr.includes('yellow')
-        ) {
-          status = 'minor_repair';
-        } else if (
-          statusStr.includes('หนัก') ||
-          statusStr.includes('major') ||
-          statusStr.includes('ส้ม') ||
-          statusStr.includes('orange')
-        ) {
-          status = 'major_repair';
-        } else if (
-          statusStr.includes('ซาก') ||
-          statusStr.includes('จำหน่าย') ||
-          statusStr.includes('damaged') ||
-          statusStr.includes('แดง') ||
-          statusStr.includes('red') ||
-          statusStr.includes('ชำรุด') ||
-          statusStr.includes('เสียหาย')
-        ) {
-          status = 'damaged';
-        } else {
-          status = 'good';
-        }
-
-        // Parse location & slot
-        const locationStr = (row[locationCol] || '').trim();
-        let slotNumber: number | null = null;
-        let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
-
-        if (locationStr.includes('คัดแยก') || locationStr.includes('triage')) {
-          locationType = 'triage';
-          slotNumber = null;
-        } else if (
-          locationStr.includes('ส่งซ่อม') ||
-          locationStr.includes('repair') ||
-          locationStr.includes('โรงงาน')
-        ) {
-          locationType = 'repair';
-          slotNumber = null;
-        } else if (
-          locationStr.includes('รอขาย') ||
-          locationStr.includes('sale') ||
-          locationStr.includes('ประมูล')
-        ) {
-          locationType = 'sale';
-          slotNumber = null;
-        } else if (locationStr.includes('พักรอ') || locationStr.includes('holding')) {
-          locationType = 'holding';
-          slotNumber = null;
-        } else {
-          const match = locationStr.match(/\b([0-9]{1,3})\b/);
-          if (match && match[1]) {
-            slotNumber = parseInt(match[1], 10);
-            locationType = 'grid';
-          } else {
-            slotNumber = null;
-            locationType = 'holding';
-          }
-        }
-
-        const receivedDate = (row[dateCol] || new Date().toISOString().split('T')[0]).trim();
-        const updatedAt = (row[updateCol] || new Date().toISOString().split('T')[0]).trim();
-        const notes = (row[notesCol] || '').trim();
-
-        parsedTransformers.push({
-          id: `tr-sheet-${idx + 1}`,
-          peaNo,
-          serialNo,
-          brand,
-          capacityKva,
-          phase,
-          voltage,
-          status,
-          slotNumber,
-          locationType,
-          receivedDate,
-          updatedAt,
-          notes,
-        });
-      });
+      // 3. Fetch directly from Google Sheets as primary master
+      const result = await fetchGoogleSheetsTransformers(spreadsheetId, true);
 
       addWebhookLog({
-        url: `Google Sheet (${spreadsheetId}) [${usedSheetName}]`,
+        url: `Google Sheet (${spreadsheetId}) [${result.sheetName || 'ข้อมูลหม้อแปลง'}]`,
         method: 'GET (Sheets Pull)',
-        status: 200,
-        statusText: 'OK',
-        success: true,
-        message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${parsedTransformers.length} เครื่อง)`,
-        payloadSummary: `ดึงข้อมูล ${parsedTransformers.length} เครื่อง จากแผ่นงาน ${usedSheetName}`,
+        status: result.success ? 200 : 500,
+        statusText: result.success ? 'OK' : 'Error',
+        success: result.success,
+        message: result.success
+          ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${result.count} เครื่อง)`
+          : result.message || 'ไม่สามารถดึงข้อมูลจาก Google Sheets ได้',
+        payloadSummary: `ดึงข้อมูล ${result.count} เครื่อง จากแผ่นงาน ${result.sheetName || 'ข้อมูลหม้อแปลง'}`,
       });
 
-      // Keep server master state in sync with latest Google Sheet data
-      masterState.transformers = parsedTransformers;
-      masterState.lastUpdated = Date.now();
-      broadcastMasterState();
-
       return res.json({
-        success: true,
-        count: parsedTransformers.length,
-        transformers: parsedTransformers,
-        spreadsheetId,
-        sheetName: usedSheetName,
-        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
-        timestamp: new Date().toLocaleTimeString('th-TH'),
-        message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${parsedTransformers.length} เครื่อง)`,
+        ...result,
+        message: `ดึงข้อมูลจาก Google Sheets สำเร็จ (${result.count} เครื่อง)`,
       });
     } catch (err: any) {
       console.error('[Sheets-Pull Error]:', err);
@@ -547,28 +626,14 @@ async function startServer() {
     }
   });
 
-  // Shared Master Transformers state across all connected devices
-  app.get('/api/transformers', async (_req, res) => {
+  // Shared Master Transformers state across all connected devices (Google Sheets is Primary Master)
+  app.get('/api/transformers', async (req, res) => {
     try {
-      // If server master state is empty (e.g. freshly started container), pull from Google Sheets first
-      if (!masterState.transformers || masterState.transformers.length === 0) {
-        try {
-          const pullRes = await fetch('http://localhost:3000/api/sheets-pull', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ spreadsheetId: '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco' }),
-          });
-          if (pullRes.ok) {
-            const data = (await pullRes.json()) as any;
-            if (data && data.success && Array.isArray(data.transformers) && data.transformers.length > 0) {
-              masterState.transformers = data.transformers;
-              masterState.lastUpdated = Date.now();
-            }
-          }
-        } catch (pullErr) {
-          console.warn('[Server Master] Auto-pull on startup warning:', pullErr);
-        }
-      }
+      const force = req.query.force === 'true';
+      const result = await fetchGoogleSheetsTransformers(
+        '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco',
+        force
+      );
 
       return res.json({
         success: true,
@@ -576,9 +641,18 @@ async function startServer() {
         transformers: masterState.transformers,
         config: masterState.config,
         lastUpdated: masterState.lastUpdated,
+        sheetName: result.sheetName,
+        source: 'google_sheets_master',
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return res.json({
+        success: true,
+        count: masterState.transformers.length,
+        transformers: masterState.transformers,
+        config: masterState.config,
+        lastUpdated: masterState.lastUpdated,
+        error: err.message,
+      });
     }
   });
 
@@ -609,18 +683,24 @@ async function startServer() {
 
   app.post('/api/transformers', (req, res) => {
     try {
-      const { transformers, config } = req.body;
+      const { transformers, config, allowClear } = req.body;
       if (Array.isArray(transformers)) {
         masterState.transformers = transformers;
         if (config) {
           masterState.config = config;
         }
+        masterState.lastLocalMutationTime = Date.now();
         masterState.lastUpdated = Date.now();
-        broadcastMasterState();
+        lastSheetSignature = transformers
+          .map((t) => `${t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
+          .sort()
+          .join(';');
+        broadcastMasterState(!!allowClear);
         return res.json({
           success: true,
           count: masterState.transformers.length,
           lastUpdated: masterState.lastUpdated,
+          allowClear: !!allowClear,
         });
       }
       return res.status(400).json({ success: false, message: 'Invalid transformers array' });
@@ -939,35 +1019,21 @@ async function startServer() {
   }
 
   // Background Sheet Synchronization:
-  // Every 8 seconds, if there are active SSE client connections, check if the Google Sheet was modified externally
+  // Every 4 seconds, if there are active SSE client connections, pull the latest data from Google Sheet
+  // (Since Google Sheet is the Primary Master source of truth, if anyone deletes or edits in Sheet, all devices update instantly)
   setInterval(async () => {
     try {
       if (sseClients.size === 0) return;
-      const pullRes = await fetch('http://localhost:3000/api/sheets-pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId: '1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco' }),
-      });
-      if (pullRes.ok) {
-        const data = (await pullRes.json()) as any;
-        if (data && data.success && Array.isArray(data.transformers)) {
-          const currentSignature = masterState.transformers
-            .map((t) => `${t.id || t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
-            .join('|');
-          const newSignature = data.transformers
-            .map((t: any) => `${t.id || t.peaNo}:${t.slotNumber}:${t.status}:${t.locationType}`)
-            .join('|');
-          if (currentSignature !== newSignature) {
-            masterState.transformers = data.transformers;
-            masterState.lastUpdated = Date.now();
-            broadcastMasterState();
-          }
-        }
-      }
-    } catch {
-      // background pull check quiet
+      await fetchGoogleSheetsTransformers('1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco', true);
+    } catch (err) {
+      console.warn('[Sync Loop Warning]:', err);
     }
-  }, 8000);
+  }, 4000);
+
+  // Initial pull from Google Sheet on startup to ensure master state is immediately warm
+  fetchGoogleSheetsTransformers('1VJ9T6ZGGeE7wMZQoloseELmepX5qJWC5QUMRNRgXfco', true).catch((err) => {
+    console.warn('[Startup Pull Warning]:', err);
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Transformer, STATUS_CONFIG } from '../types';
+import { Transformer, getStatusConfig } from '../types';
 import { normalizePeaNo } from '../utils/customOptions';
 
 interface TransformerTriangleProps {
@@ -21,7 +21,7 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
   compact,
   size
 }) => {
-  const statusConfig = STATUS_CONFIG[transformer.status];
+  const statusConfig = getStatusConfig(transformer?.status);
   const effectiveSize: 'compact' | 'normal' | 'large' = size || (compact ? 'compact' : 'normal');
 
   // Format PEA code so it always includes TR prefix in front of transformer number
@@ -82,17 +82,17 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
         isDragging ? 'opacity-40 scale-95' : 'hover:scale-105'
       } ${
         isHighlighted
-          ? 'ring-2 ring-orange-400 ring-offset-2 ring-offset-[#0a0a0a] animate-pulse scale-105 z-20'
+          ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-white animate-pulse scale-105 z-20'
           : ''
       }`}
       title={`${displayPeaNo} | ขนาด ${transformer.capacityKva} kVA | ระบบ ${transformer.phase} (${statusConfig.label})`}
     >
       {/* Visual Triangle Shape Container */}
       <div className="relative flex flex-col items-center justify-center">
-        {/* SVG Triangle with high-contrast electrical style & drop shadow */}
+        {/* SVG Triangle with pastel electrical style & soft drop shadow */}
         <svg
           viewBox="-4 -4 108 96"
-          className={`${svgDimensions} drop-shadow-md transition-transform`}
+          className={`${svgDimensions} drop-shadow-sm transition-transform`}
         >
           <defs>
             <linearGradient id={`grad-${transformer.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -100,15 +100,15 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
               <stop offset="100%" stopColor={statusConfig.darkHex} />
             </linearGradient>
             <filter id={`shadow-${transformer.id}`} x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#000" floodOpacity="0.6" />
+              <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" floodColor="#0f172a" floodOpacity="0.25" />
             </filter>
           </defs>
 
-          {/* Equilateral Triangle with thick crisp white border */}
+          {/* Equilateral Triangle with soft warm ivory border */}
           <polygon
             points="50,4 96,82 4,82"
             fill={`url(#grad-${transformer.id})`}
-            stroke="#ffffff"
+            stroke="#f5f4ef"
             strokeWidth="3.5"
             strokeLinejoin="round"
             filter={`url(#shadow-${transformer.id})`}
@@ -117,8 +117,8 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
           {/* Inner contrast plate to ensure text legibility */}
           <polygon
             points="50,16 88,78 12,78"
-            fill="rgba(0, 0, 0, 0.28)"
-            stroke="rgba(255, 255, 255, 0.25)"
+            fill="rgba(15, 23, 42, 0.22)"
+            stroke="rgba(255, 255, 255, 0.35)"
             strokeWidth="1.2"
             strokeLinejoin="round"
           />
@@ -127,11 +127,11 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
         {/* Overlay: ขนาดหม้อแปลง (Capacity kVA) + ระบบเฟส (Phase) inside Triangle */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pt-[20%] pointer-events-none">
           {/* 1. ขนาดหม้อแปลง (kVA) */}
-          <div className="flex items-baseline justify-center leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+          <div className="flex items-baseline justify-center leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
             <span className={`${kvaNumSize} font-black text-white tracking-tight`}>
               {transformer.capacityKva}
             </span>
-            <span className={`${kvaUnitSize} font-bold text-amber-300 ml-0.5 tracking-tight`}>
+            <span className={`${kvaUnitSize} font-bold text-amber-200 ml-0.5 tracking-tight`}>
               kVA
             </span>
           </div>
@@ -141,8 +141,8 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
             <span
               className={`font-mono font-extrabold leading-none tracking-tight shadow-xs ${phaseBadgeStyle} ${
                 is3Phase
-                  ? 'bg-blue-950/90 text-blue-200 border border-blue-400/60'
-                  : 'bg-purple-950/90 text-purple-200 border border-purple-400/60'
+                  ? 'bg-slate-900/85 text-blue-200 border border-blue-300/40'
+                  : 'bg-slate-900/85 text-purple-200 border border-purple-300/40'
               }`}
             >
               {phaseLabel}
@@ -156,15 +156,15 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
         <div
           className={`flex items-center justify-center rounded font-mono font-bold shadow-xs border text-center truncate ${peaBadgeStyle} ${
             transformer.status === 'good'
-              ? 'bg-[#0e1711] border-emerald-600/70 text-emerald-200'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
               : transformer.status === 'minor_repair'
-              ? 'bg-[#181508] border-yellow-600/70 text-yellow-200'
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
               : transformer.status === 'major_repair'
-              ? 'bg-[#180f08] border-orange-600/70 text-orange-200'
-              : 'bg-[#180b0b] border-rose-600/70 text-rose-200'
+              ? 'bg-orange-50 border-orange-300 text-orange-900'
+              : 'bg-rose-50 border-rose-300 text-rose-900'
           }`}
         >
-          <span className="text-white font-mono tracking-tight truncate">
+          <span className="font-mono font-bold tracking-tight truncate">
             {displayPeaNo}
           </span>
         </div>
@@ -172,7 +172,7 @@ export const TransformerTriangle: React.FC<TransformerTriangleProps> = ({
 
       {/* Floating Status Indicator Pin */}
       <div
-        className={`absolute -top-1 -right-1 rounded-full border-2 border-[#0a0a0a] shadow-sm flex items-center justify-center text-[7px] font-bold text-white ${
+        className={`absolute -top-1 -right-1 rounded-full border-2 border-white shadow-xs flex items-center justify-center text-[7px] font-bold text-white ${
           effectiveSize === 'compact' ? 'w-2.5 h-2.5' : 'w-3 h-3'
         }`}
         style={{ backgroundColor: statusConfig.hexColor }}

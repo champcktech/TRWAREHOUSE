@@ -1,5 +1,5 @@
 import React from 'react';
-import { Transformer, TransformerStatus, STATUS_CONFIG, WarehouseConfig } from '../types';
+import { Transformer, TransformerStatus, STATUS_CONFIG, WarehouseConfig, normalizeTransformerStatus } from '../types';
 import { Box, Layers, Truck, Tag } from 'lucide-react';
 
 interface StatsBarProps {
@@ -24,10 +24,10 @@ export const StatsBar: React.FC<StatsBarProps> = ({
   const emptySlots = Math.max(0, totalSlots - occupiedSlots);
   const occupancyPercent = totalSlots > 0 ? Math.round((occupiedSlots / totalSlots) * 100) : 0;
 
-  const goodCount = transformers.filter((t) => t.status === 'good').length;
-  const minorCount = transformers.filter((t) => t.status === 'minor_repair').length;
-  const majorCount = transformers.filter((t) => t.status === 'major_repair').length;
-  const damagedCount = transformers.filter((t) => t.status === 'damaged').length;
+  const goodCount = transformers.filter((t) => normalizeTransformerStatus(t.status) === 'good').length;
+  const minorCount = transformers.filter((t) => normalizeTransformerStatus(t.status) === 'minor_repair').length;
+  const majorCount = transformers.filter((t) => normalizeTransformerStatus(t.status) === 'major_repair').length;
+  const damagedCount = transformers.filter((t) => normalizeTransformerStatus(t.status) === 'damaged').length;
   const repairCount = transformers.filter((t) => t.locationType === 'repair').length;
   const saleCount = transformers.filter((t) => t.locationType === 'sale').length;
 
@@ -44,9 +44,9 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       id: 'all',
       label: 'ทั้งหมดในระบบ',
       count: transformers.length,
-      color: '#f97316',
-      activeClasses: 'bg-[#181818] border-orange-500 text-orange-400 ring-1 ring-orange-500/40 shadow-sm',
-      inactiveClasses: 'text-[#888] hover:text-[#ddd] hover:bg-[#141414] border-[#222]'
+      color: '#6d53a6',
+      activeClasses: 'bg-[#5c478a] border-[#4c3878] text-[#f5f4ef] shadow-2xs',
+      inactiveClasses: 'bg-[#e3e8e5] text-[#3d4b45] hover:bg-[#d8e0dc] hover:text-[#1f2b27] border-[#c4d0c9]'
     },
     {
       id: 'good',
@@ -54,8 +54,8 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       subLabel: 'สีเขียว',
       count: goodCount,
       color: STATUS_CONFIG.good.hexColor,
-      activeClasses: 'bg-emerald-950/40 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm',
-      inactiveClasses: 'text-[#888] hover:text-emerald-300 hover:bg-[#141414] border-[#222]'
+      activeClasses: 'bg-[#cde6dc] border-[#78bfa0] text-[#1d4d38] ring-1 ring-[#8ecab0] shadow-2xs',
+      inactiveClasses: 'bg-[#e1efe9] text-[#285c45] hover:bg-[#d5e9e0] border-[#bddbcf]'
     },
     {
       id: 'minor_repair',
@@ -63,8 +63,8 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       subLabel: 'สีเหลือง',
       count: minorCount,
       color: STATUS_CONFIG.minor_repair.hexColor,
-      activeClasses: 'bg-yellow-950/40 border-yellow-500 text-yellow-300 ring-1 ring-yellow-500/40 shadow-sm',
-      inactiveClasses: 'text-[#888] hover:text-yellow-300 hover:bg-[#141414] border-[#222]'
+      activeClasses: 'bg-[#f2e2be] border-[#d9b262] text-[#5c400d] ring-1 ring-[#e0be75] shadow-2xs',
+      inactiveClasses: 'bg-[#f4ead5] text-[#694a12] hover:bg-[#efe1c3] border-[#e0cca4]'
     },
     {
       id: 'major_repair',
@@ -72,8 +72,8 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       subLabel: 'สีส้ม',
       count: majorCount,
       color: STATUS_CONFIG.major_repair.hexColor,
-      activeClasses: 'bg-orange-950/40 border-orange-500 text-orange-300 ring-1 ring-orange-500/40 shadow-sm',
-      inactiveClasses: 'text-[#888] hover:text-orange-300 hover:bg-[#141414] border-[#222]'
+      activeClasses: 'bg-[#f4d7c6] border-[#de966f] text-[#632a0f] ring-1 ring-[#e6a683] shadow-2xs',
+      inactiveClasses: 'bg-[#f5e3d8] text-[#6e3114] hover:bg-[#f0d8c9] border-[#e6c3af]'
     },
     {
       id: 'damaged',
@@ -81,16 +81,16 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       subLabel: 'สีแดง',
       count: damagedCount,
       color: STATUS_CONFIG.damaged.hexColor,
-      activeClasses: 'bg-rose-950/40 border-rose-500 text-rose-300 ring-1 ring-rose-500/40 shadow-sm',
-      inactiveClasses: 'text-[#888] hover:text-rose-300 hover:bg-[#141414] border-[#222]'
+      activeClasses: 'bg-[#f2cfd4] border-[#d98993] text-[#611c24] ring-1 ring-[#e099a2] shadow-2xs',
+      inactiveClasses: 'bg-[#f4dfe2] text-[#6b212a] hover:bg-[#efd2d6] border-[#e3bbc0]'
     }
   ];
 
   return (
-    <div className="bg-[#0a0a0a] rounded-lg border border-[#222] p-2 sm:p-2.5 shadow-md flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-      {/* Scrollable / Responsive Status Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        <div className="text-[11px] font-semibold text-[#666] uppercase tracking-wider pl-1 pr-2 hidden xl:block">
+    <div className="bg-[#eff2ee] rounded-2xl border border-[#cad4ce] p-2.5 sm:p-3 shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+      {/* Responsive Status Tabs */}
+      <div className="flex flex-wrap items-center gap-1.5 py-0.5">
+        <div className="text-[11px] font-semibold text-[#54635c] uppercase tracking-wider pl-1 pr-1.5 hidden xl:block">
           แท็บเลือกสถานะ:
         </div>
         {tabs.map((tab) => {
@@ -104,37 +104,37 @@ export const StatsBar: React.FC<StatsBarProps> = ({
             <button
               key={tab.id}
               onClick={() => onSelectStatusFilter(tab.id)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold border transition-all whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all whitespace-nowrap cursor-pointer ${
                 isActive ? tab.activeClasses : tab.inactiveClasses
               }`}
             >
               {tab.id === 'all' ? (
-                <Box className={`w-3.5 h-3.5 ${isActive ? 'text-orange-400' : 'text-[#666]'}`} />
+                <Box className={`w-3.5 h-3.5 ${isActive ? 'text-[#dfd6f5]' : 'text-[#5c6b64]'}`} />
               ) : (
                 <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                  className="w-2.5 h-2.5 rounded-full shrink-0 border border-[#f5f4ef]/80 shadow-2xs"
                   style={{ backgroundColor: tab.color }}
                 />
               )}
 
               <span className="tracking-tight">{tab.label}</span>
               {tab.subLabel && (
-                <span className="text-[10px] text-[#666] font-normal hidden sm:inline">
+                <span className={`text-[10px] font-normal hidden sm:inline ${isActive ? 'opacity-85' : 'text-[#5e6e67]'}`}>
                   {tab.subLabel}
                 </span>
               )}
 
               {/* Count badge */}
               <span
-                className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded-md ${
                   isActive
-                    ? 'bg-black/40 border border-white/10'
-                    : 'bg-[#141414] text-[#888] border border-[#222]'
+                    ? 'bg-black/15 text-current'
+                    : 'bg-[#f5f4ef]/90 text-[#2d3b36] border border-[#c8d2cc]'
                 }`}
               >
                 {tab.count}
                 {percentage !== null && (
-                  <span className="font-normal text-[9px] opacity-70 ml-1">
+                  <span className="font-normal text-[9px] opacity-80 ml-1">
                     {percentage}%
                   </span>
                 )}
@@ -145,41 +145,37 @@ export const StatsBar: React.FC<StatsBarProps> = ({
       </div>
 
       {/* Warehouse Capacity info pill on the right */}
-      <div className="flex items-center gap-3 px-3 py-1.5 bg-[#121212] border border-[#222] rounded-md text-xs shrink-0 self-end lg:self-center w-full lg:w-auto justify-between lg:justify-end">
-        <div className="flex items-center gap-2">
-          <Layers className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-          <span className="text-[#888] text-[11px]">ความจุผังคลัง:</span>
-          <span className="font-mono font-bold text-white">
-            {occupiedSlots} <span className="text-[#666] font-normal">/ {totalSlots} ช่อง</span>
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 py-1.5 bg-[#e4e9e5] border border-[#c6d1cb] rounded-xl text-xs shrink-0 self-stretch lg:self-center justify-between lg:justify-end">
+        <div className="flex items-center gap-1.5">
+          <Layers className="w-3.5 h-3.5 text-[#6850a1] shrink-0" />
+          <span className="text-[#4a5953] text-[11px]">ความจุผังคลัง:</span>
+          <span className="font-mono font-bold text-[#222e2a]">
+            {occupiedSlots} <span className="text-[#5a6962] font-normal">/ {totalSlots} ช่อง</span>
           </span>
-          <span className="text-[10px] text-[#666] font-mono">({occupancyPercent}%)</span>
+          <span className="text-[10px] text-[#5a6962] font-mono">({occupancyPercent}%)</span>
         </div>
 
-        <div className="h-3 w-[1px] bg-[#2a2a2a] hidden sm:block" />
+        <div className="h-3 w-[1px] bg-[#c2cdc7] hidden sm:block" />
 
-        <span className="text-emerald-400 font-medium font-mono text-[11px] bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded whitespace-nowrap">
-          ว่าง {emptySlots} ช่อง
-        </span>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[#21523c] font-semibold font-mono text-[11px] bg-[#dceee5] border border-[#b4d9c7] px-2 py-0.5 rounded-lg whitespace-nowrap">
+            ว่าง {emptySlots} ช่อง
+          </span>
 
-        {repairCount > 0 && (
-          <>
-            <div className="h-3 w-[1px] bg-[#2a2a2a] hidden sm:block" />
-            <span className="text-sky-300 font-medium font-mono text-[11px] bg-sky-950/40 border border-sky-800/50 px-2 py-0.5 rounded whitespace-nowrap flex items-center gap-1">
+          {repairCount > 0 && (
+            <span className="text-[#1f4e63] font-semibold font-mono text-[11px] bg-[#dcecf2] border border-[#b4d3e0] px-2 py-0.5 rounded-lg whitespace-nowrap flex items-center gap-1">
               <Truck className="w-3 h-3" />
               ส่งซ่อม {repairCount}
             </span>
-          </>
-        )}
+          )}
 
-        {saleCount > 0 && (
-          <>
-            <div className="h-3 w-[1px] bg-[#2a2a2a] hidden sm:block" />
-            <span className="text-purple-300 font-medium font-mono text-[11px] bg-purple-950/40 border border-purple-800/50 px-2 py-0.5 rounded whitespace-nowrap flex items-center gap-1">
+          {saleCount > 0 && (
+            <span className="text-[#542c66] font-semibold font-mono text-[11px] bg-[#eadff0] border border-[#d1bce0] px-2 py-0.5 rounded-lg whitespace-nowrap flex items-center gap-1">
               <Tag className="w-3 h-3" />
               รอขาย {saleCount}
             </span>
-          </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
