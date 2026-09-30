@@ -66,6 +66,24 @@ export interface WebhookPayload {
   }>;
 }
 
+export function formatTransformerLocationName(t: Transformer, config: WarehouseConfig): string {
+  if (
+    t.slotNumber !== null &&
+    t.locationType !== 'triage' &&
+    t.locationType !== 'holding' &&
+    t.locationType !== 'repair' &&
+    t.locationType !== 'sale'
+  ) {
+    return `${config.zonePrefix} ช่อง ${t.slotNumber}`;
+  }
+  if (t.locationType === 'triage') return 'จุดรอคัดแยก';
+  if (t.locationType === 'repair') {
+    return t.repairVendor ? `ส่งซ่อมภายนอก (${t.repairVendor})` : 'ส่งซ่อมภายนอก';
+  }
+  if (t.locationType === 'sale') return 'จุดวางรอขาย';
+  return 'จุดพักรอจัดเก็บ';
+}
+
 /**
  * Prepares the standardized JSON payload for Webhooks
  */
@@ -135,7 +153,7 @@ export function buildWebhookPayload(
       status: t.status,
       statusLabel: STATUS_CONFIG[t.status]?.label || t.status,
       slotNumber: t.slotNumber,
-      locationName: t.slotNumber !== null ? `${config.zonePrefix} ช่อง ${t.slotNumber}` : 'จุดพักรอจัดเก็บ',
+      locationName: formatTransformerLocationName(t, config),
       receivedDate: t.receivedDate,
       updatedAt: t.updatedAt,
       notes: t.notes || '',
@@ -635,22 +653,38 @@ export async function fetchTransformersFromSheets(options?: {
       const locStr = (row[locationCol] || '').trim();
       let slotNumber: number | null = null;
       let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
-      const slotMatch = locStr.match(/(\d+)/);
-      if (slotMatch) {
-        slotNumber = parseInt(slotMatch[1], 10);
-        locationType = 'grid';
+      let repairVendor: string | undefined = undefined;
+
+      if (locStr.includes('คัดแยก') || locStr.includes('triage')) {
+        locationType = 'triage';
+        slotNumber = null;
+      } else if (locStr.includes('ส่งซ่อม') || locStr.includes('repair') || locStr.includes('โรงงาน')) {
+        locationType = 'repair';
+        slotNumber = null;
+        const vendorMatch = locStr.match(/\(([^)]+)\)/);
+        if (vendorMatch && vendorMatch[1]) {
+          repairVendor = vendorMatch[1].trim();
+        }
+      } else if (locStr.includes('รอขาย') || locStr.includes('รอจำหน่าย') || locStr.includes('sale') || locStr.includes('ประมูล')) {
+        locationType = 'sale';
+        slotNumber = null;
       } else if (locStr.includes('พัก') || locStr.includes('holding')) {
         locationType = 'holding';
-      } else if (locStr.includes('คัดแยก') || locStr.includes('triage')) {
-        locationType = 'triage';
-      } else if (locStr.includes('ซ่อม') || locStr.includes('repair')) {
-        locationType = 'repair';
-      } else if (locStr.includes('รอจำหน่าย') || locStr.includes('sale') || locStr.includes('ประมูล')) {
-        locationType = 'sale';
+        slotNumber = null;
+      } else {
+        const slotMatch = locStr.match(/\b([0-9]{1,3})\b/);
+        if (slotMatch && slotMatch[1]) {
+          slotNumber = parseInt(slotMatch[1], 10);
+          locationType = 'grid';
+        } else {
+          slotNumber = null;
+          locationType = 'holding';
+        }
       }
 
+      const cleanPeaId = peaNo.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
       parsedTransformers.push({
-        id: `tr-direct-${idx + 1}`,
+        id: `tr-${cleanPeaId}`,
         peaNo,
         serialNo,
         brand,
@@ -660,6 +694,7 @@ export async function fetchTransformersFromSheets(options?: {
         status,
         slotNumber,
         locationType,
+        repairVendor,
         receivedDate: (row[dateCol] || new Date().toISOString().split('T')[0]).trim(),
         updatedAt: (row[updateCol] || new Date().toISOString().split('T')[0]).trim(),
         notes: (row[notesCol] || '').trim(),
@@ -708,7 +743,7 @@ export async function copyTransformersToClipboard(
   ];
 
   const rows = transformers.map((t, idx) => {
-    const loc = t.slotNumber !== null ? `${config.zonePrefix} ช่อง ${t.slotNumber}` : 'จุดพักรอจัดเก็บ';
+    const loc = formatTransformerLocationName(t, config);
     return [
       idx + 1,
       t.peaNo || '',

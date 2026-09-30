@@ -93,7 +93,7 @@ export function sanitizeTransformer(t: any): Transformer {
 }
 
 export default function App() {
-  // 1. State: Transformers list with localStorage persistence
+  // 1. State: Transformers list (Google Sheets is Primary Master; localStorage is only a temporary read cache while loading)
   const [transformers, setTransformers] = useState<Transformer[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
@@ -111,7 +111,7 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to load from localStorage', e);
     }
-    return INITIAL_TRANSFORMERS.map(sanitizeTransformer);
+    return [];
   });
 
   // 2. State: Warehouse Grid Config (columns x rows)
@@ -127,7 +127,7 @@ export default function App() {
     return DEFAULT_WAREHOUSE_CONFIG;
   });
 
-  // Save to localStorage on changes
+  // Save to localStorage on changes (local cache only — NEVER triggers outbound Webhook push)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(transformers));
@@ -202,7 +202,6 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [isPullingSheets, setIsPullingSheets] = useState<boolean>(false);
-  const isSyncingFromRemoteRef = React.useRef(false);
 
   const handleSaveWebhookUrl = (url: string) => {
     setWebhookUrl(url);
@@ -220,17 +219,76 @@ export default function App() {
     } catch (e) {
       console.warn('Failed to save webhook autosync to localStorage', e);
     }
-    showNotification(enabled ? 'เปิดการส่งข้อมูล Webhook อัตโนมัติแล้ว' : 'ปิดการส่งข้อมูล Webhook อัตโนมัติ');
+    showNotification(
+      enabled
+        ? 'เปิดการส่งข้อมูลไปยัง Sheets เมื่อมีการเพิ่ม/ลบ/ย้ายหม้อแปลงแล้ว'
+        : 'ปิดการส่งข้อมูลอัตโนมัติเมื่อแก้ไขแล้ว'
+    );
   };
 
   const lastPulledAtRef = React.useRef<number>(0);
-  const isRemoteInitializedRef = React.useRef<boolean>(false);
   const lastServerVersionRef = React.useRef<number>(0);
+  const lastLocalActionTimeRef = React.useRef<number>(0);
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
 
   /**
-   * Pulls transformers data directly from Google Sheets / Webhook.
-   * Runs automatically every time the web page is opened.
+   * EXPLICIT MUTATION PUSH ONLY:
+   * Sends updated data to Google Sheets & shared server state ONLY when the user explicitly
+   * performs an action (Add, Edit, Delete, or Move).
+   * Opening the app on any device will NEVER call this function.
+   */
+  const pushExplicitMutationToSheets = (
+    updatedList: Transformer[],
+    updatedConfig: WarehouseConfig,
+    eventType: 'sync_all' | 'transformer_created' | 'transformer_updated' | 'transformer_moved' | 'transformer_deleted' = 'sync_all',
+    allowClear = false
+  ) => {
+    lastLocalActionTimeRef.current = Date.now();
+
+    // 1. Update shared server state so other open browsers see the change immediately
+    fetch('/api/transformers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transformers: updatedList, config: updatedConfig, allowClear }),
+    })
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (data && data.lastUpdated) {
+          lastServerVersionRef.current = data.lastUpdated;
+        }
+      })
+      .catch((e) => console.warn('Server master sync warning on explicit action:', e));
+
+    // 2. Push to Google Sheets via Webhook ONLY on explicit user mutation
+    const isValidPushWebhook =
+      webhookUrl &&
+      webhookUrl.trim() &&
+      !webhookUrl.includes('docs.google.com/spreadsheets') &&
+      webhookUrl.includes('/exec');
+
+    if (autoSyncWebhook && isValidPushWebhook) {
+      setSyncStatus('syncing');
+      const payload = buildWebhookPayload(updatedList, updatedConfig, eventType);
+      sendWebhook(webhookUrl.trim(), payload)
+        .then((res) => {
+          if (res.success) {
+            setSyncStatus('synced');
+            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
+          } else {
+            setSyncStatus('error');
+          }
+        })
+        .catch((err) => {
+          console.warn('Explicit mutation webhook push failed:', err);
+          setSyncStatus('error');
+        });
+    }
+  };
+
+  /**
+   * READ-ONLY PULL from Google Sheets:
+   * Uses Google Sheets as the 100% Single Source of Truth.
+   * NEVER merges stale localStorage or mock data, and NEVER pushes back to Google Sheets!
    */
   const handlePullFromSheets = async (isAuto = false) => {
     setIsPullingSheets(true);
@@ -245,50 +303,21 @@ export default function App() {
       if (res.success && Array.isArray(res.transformers)) {
         const sanitizedRemote = res.transformers.map(sanitizeTransformer);
 
-        // Safety guard: If sheet is empty (only headers) but user has data in app, DO NOT wipe!
-        if (sanitizedRemote.length === 0 && transformers.length > 0) {
-          setSyncStatus('synced');
-          if (!isAuto) {
-            showNotification('Google Sheet มีเฉพาะหัวตาราง (คงข้อมูลหม้อแปลงที่มีในระบบไว้)');
-          }
-          return;
-        }
-
-        let targetList = sanitizedRemote;
-        // If current app has transformers that are not yet in the sheet, keep them!
-        if (transformers.length > 0 && sanitizedRemote.length > 0) {
-          const sheetPeaSet = new Set(sanitizedRemote.map((t) => (t.peaNo || '').trim().toLowerCase()));
-          const localUnwritten = transformers.filter((t) => !sheetPeaSet.has((t.peaNo || '').trim().toLowerCase()));
-          if (localUnwritten.length > 0) {
-            targetList = [...sanitizedRemote, ...localUnwritten];
-          }
-        }
-
-        isSyncingFromRemoteRef.current = true;
-        setTransformers(targetList);
-        isRemoteInitializedRef.current = true;
+        // Replace local state 100% with Google Sheets data (Google Sheets is Primary Master)
+        setTransformers(sanitizedRemote);
         try {
-          localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(targetList));
+          localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(sanitizedRemote));
         } catch (e) {
           console.warn('Failed to save pulled transformers to localStorage', e);
         }
-
-        // Also update server master state so all other devices see this data immediately
-        try {
-          fetch('/api/transformers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transformers: targetList, config }),
-          }).catch(() => {});
-        } catch {}
 
         setSyncStatus('synced');
         const nowTime = new Date().toLocaleTimeString('th-TH');
         setLastSyncTime(nowTime);
         showNotification(
           isAuto
-            ? `ดึงข้อมูลจาก Google Sheets สำเร็จ (${targetList.length} เครื่อง)`
-            : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${targetList.length} เครื่อง)`
+            ? `ดึงข้อมูลล่าสุดจาก Google Sheets สำเร็จ (${sanitizedRemote.length} เครื่อง)`
+            : `อัปเดตข้อมูลจาก Google Sheets เรียบร้อย (${sanitizedRemote.length} เครื่อง)`
         );
       } else if (!isAuto) {
         setSyncStatus('error');
@@ -310,79 +339,57 @@ export default function App() {
     }
   };
 
-  // Cross-device sync: Load shared master state immediately and listen to real-time SSE stream
+  // Cross-device READ-ONLY sync: Pull from Google Sheets on open and listen for updates
+  // NEVER pushes local device data to Google Sheets on open!
   useEffect(() => {
     let isMounted = true;
     let eventSource: EventSource | null = null;
 
-    const loadSharedMasterState = async () => {
+    const loadFromGoogleSheetsMaster = async () => {
       try {
-        const res = await fetch('/api/transformers');
+        const res = await fetch('/api/transformers?force=true');
         if (res.ok) {
           const data = (await res.json()) as any;
           if (data && data.success && Array.isArray(data.transformers)) {
             if (!isMounted) return;
 
-            let targetList = data.transformers.map(sanitizeTransformer);
-            // If remote has 0 transformers, check if local storage has existing saved transformers
-            if (targetList.length === 0) {
-              const localSaved = localStorage.getItem(STORAGE_KEY_TRANSFORMERS);
-              if (localSaved) {
-                try {
-                  const parsed = JSON.parse(localSaved);
-                  if (Array.isArray(parsed) && parsed.length > 0) {
-                    targetList = parsed.map(sanitizeTransformer);
-                    fetch('/api/transformers', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ transformers: targetList, config }),
-                    }).catch(() => {});
-                  }
-                } catch {}
-              }
-            }
-
-            isSyncingFromRemoteRef.current = true;
-            setTransformers(targetList);
+            const sheetList = data.transformers.map(sanitizeTransformer);
+            setTransformers(sheetList);
             if (data.config) {
               setConfig(data.config);
             }
             lastServerVersionRef.current = data.lastUpdated || Date.now();
-            isRemoteInitializedRef.current = true;
             setIsInitialLoading(false);
             setSyncStatus('synced');
             setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
             try {
-              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(targetList));
+              localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(sheetList));
             } catch {}
-            setTimeout(() => {
-              isSyncingFromRemoteRef.current = false;
-            }, 300);
             return;
           }
         }
       } catch (e) {
-        console.warn('Failed to load shared state from /api/transformers, falling back to direct sheets pull:', e);
+        console.warn('Failed to load from /api/transformers, falling back to direct sheets pull:', e);
       }
 
-      // Fallback: Pull directly from Google Sheets
+      // Fallback: Pull directly from Google Sheets ( strictly read-only )
       if (isMounted) {
         await handlePullFromSheets(true);
-        isRemoteInitializedRef.current = true;
         setIsInitialLoading(false);
-        setTimeout(() => {
-          isSyncingFromRemoteRef.current = false;
-        }, 300);
       }
     };
 
-    loadSharedMasterState();
+    loadFromGoogleSheetsMaster();
 
-    // 1. Instant Real-Time Sync via Server-Sent Events (SSE)
+    // 1. Instant Real-Time Sync via Server-Sent Events (SSE) - strictly read-only
     try {
       eventSource = new EventSource('/api/transformers/stream');
       eventSource.onmessage = (event) => {
         try {
+          // Ignore incoming background sync if user just performed a local mutation within last 8 seconds
+          if (Date.now() - lastLocalActionTimeRef.current < 8000) {
+            return;
+          }
           const data = JSON.parse(event.data);
           if (
             data &&
@@ -390,12 +397,10 @@ export default function App() {
             data.lastUpdated &&
             data.lastUpdated > lastServerVersionRef.current
           ) {
-            // Safety guard: if remote sends 0 transformers, but we have local items and it wasn't an explicit clear, do not wipe!
             if (data.transformers.length === 0 && !data.allowClear) {
               return;
             }
             const cleanList = data.transformers.map(sanitizeTransformer);
-            isSyncingFromRemoteRef.current = true;
             lastServerVersionRef.current = data.lastUpdated;
             setTransformers(cleanList);
             if (data.config) {
@@ -406,9 +411,6 @@ export default function App() {
             try {
               localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(cleanList));
             } catch {}
-            setTimeout(() => {
-              isSyncingFromRemoteRef.current = false;
-            }, 300);
           }
         } catch (err) {
           console.warn('SSE message parse warning:', err);
@@ -421,8 +423,11 @@ export default function App() {
       console.warn('SSE setup warning, relying on polling:', sseErr);
     }
 
-    // 2. High-Frequency Polling fallback (every 3 seconds)
+    // 2. Polling fallback (every 5 seconds) - strictly read-only from Google Sheets master
     const handleCheckUpdate = async () => {
+      if (Date.now() - lastLocalActionTimeRef.current < 8000) {
+        return;
+      }
       try {
         const res = await fetch('/api/transformers');
         if (res.ok) {
@@ -434,12 +439,10 @@ export default function App() {
             data.lastUpdated &&
             data.lastUpdated > lastServerVersionRef.current
           ) {
-            // Safety guard: if remote sends 0 transformers, but we have local items and it wasn't an explicit clear, do not wipe!
             if (data.transformers.length === 0 && !data.allowClear) {
               return;
             }
             const cleanList = data.transformers.map(sanitizeTransformer);
-            isSyncingFromRemoteRef.current = true;
             lastServerVersionRef.current = data.lastUpdated;
             setTransformers(cleanList);
             if (data.config) {
@@ -450,16 +453,13 @@ export default function App() {
             try {
               localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(cleanList));
             } catch {}
-            setTimeout(() => {
-              isSyncingFromRemoteRef.current = false;
-            }, 300);
           }
         }
       } catch {}
     };
 
     window.addEventListener('focus', handleCheckUpdate);
-    const pollInterval = setInterval(handleCheckUpdate, 3000);
+    const pollInterval = setInterval(handleCheckUpdate, 5000);
 
     return () => {
       isMounted = false;
@@ -470,71 +470,6 @@ export default function App() {
       }
     };
   }, []);
-
-  // Sync to shared server master whenever a user modifies transformers locally
-  useEffect(() => {
-    if (!isRemoteInitializedRef.current || isSyncingFromRemoteRef.current) {
-      isSyncingFromRemoteRef.current = false;
-      return;
-    }
-    fetch('/api/transformers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transformers, config }),
-    })
-      .then((r) => r.json())
-      .then((data: any) => {
-        if (data && data.lastUpdated) {
-          lastServerVersionRef.current = data.lastUpdated;
-        }
-      })
-      .catch((e) => console.warn('Server master sync error:', e));
-  }, [transformers, config]);
-
-  // Debounced auto-sync webhook on changes (outbound push to Google Sheets)
-  // Protected by safety gate: NEVER push before initial remote master state has loaded!
-  const isInitialMount = React.useRef(true);
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    // SAFETY GATE 1: Must be initialized from remote before sending any push
-    if (!isRemoteInitializedRef.current) {
-      return;
-    }
-    // SAFETY GATE 2: Skip push if the state change came from a remote pull/sync
-    if (isSyncingFromRemoteRef.current) {
-      isSyncingFromRemoteRef.current = false;
-      return;
-    }
-    // Only push if webhook URL is a valid Webhook endpoint (not a Google Sheet link)
-    const isValidPushWebhook =
-      webhookUrl &&
-      webhookUrl.trim() &&
-      !webhookUrl.includes('docs.google.com/spreadsheets') &&
-      webhookUrl.includes('/exec');
-
-    if (autoSyncWebhook && isValidPushWebhook) {
-      setSyncStatus('syncing');
-      const timer = setTimeout(async () => {
-        try {
-          const payload = buildWebhookPayload(transformers, config, 'sync_all');
-          const res = await sendWebhook(webhookUrl.trim(), payload);
-          if (res.success) {
-            setSyncStatus('synced');
-            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-          } else {
-            setSyncStatus('error');
-          }
-        } catch (err) {
-          setSyncStatus('error');
-          console.warn('Auto-sync webhook failed:', err);
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [transformers, config, autoSyncWebhook, webhookUrl]);
 
   // Google OAuth Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -623,126 +558,62 @@ export default function App() {
     return filteredTransformers.filter((t) => t.slotNumber === null && t.locationType === 'sale');
   }, [filteredTransformers]);
 
-  // Handlers for CRUD & Move operations
+  // Handlers for CRUD & Move operations (Explicit User Actions -> Push to Google Sheets)
   const handleSaveTransformer = (rawTransformer: Transformer) => {
     const transformer = sanitizeTransformer(rawTransformer);
-    isSyncingFromRemoteRef.current = false;
-    let nextList: Transformer[] = [];
-    setTransformers((prev) => {
-      // If the slot is taken by another transformer in the grid, move that one to holding area
-      const targetSlot = transformer.slotNumber;
-      const updated = prev.map((item) => {
-        if (item.id === transformer.id) {
-          return transformer;
-        }
-        if (
-          targetSlot !== null &&
-          item.slotNumber === targetSlot &&
-          (item.locationType === 'grid' || !item.locationType) &&
-          item.id !== transformer.id
-        ) {
-          // Relocate previous occupant to holding
-          return { ...item, slotNumber: null, zone: undefined, locationType: 'holding' as TransformerLocationType };
-        }
-        return item;
-      });
+    const targetSlot = transformer.slotNumber;
+    const isExisting = transformers.some((item) => item.id === transformer.id);
 
-      // If it's a new transformer not yet in the array:
-      const exists = prev.some((item) => item.id === transformer.id);
-      nextList = !exists ? [transformer, ...updated] : updated;
-      try {
-        localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(nextList));
-      } catch {}
-      return nextList;
+    const updated = transformers.map((item) => {
+      if (item.id === transformer.id) {
+        return transformer;
+      }
+      if (
+        targetSlot !== null &&
+        item.slotNumber === targetSlot &&
+        (item.locationType === 'grid' || !item.locationType) &&
+        item.id !== transformer.id
+      ) {
+        // Relocate previous occupant to holding
+        return { ...item, slotNumber: null, zone: undefined, locationType: 'holding' as TransformerLocationType };
+      }
+      return item;
     });
 
-    // Immediate direct sync to server master state to protect against background pull
-    fetch('/api/transformers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transformers: nextList, config }),
-    })
-      .then((r) => r.json())
-      .then((data: any) => {
-        if (data && data.lastUpdated) {
-          lastServerVersionRef.current = data.lastUpdated;
-        }
-      })
-      .catch((e) => console.warn('Server master sync warning on save:', e));
+    const nextList = !isExisting ? [transformer, ...updated] : updated;
+    setTransformers(nextList);
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(nextList));
+    } catch {}
 
-    showNotification(`บันทึกหม้อแปลง ${transformer.peaNo} เรียบร้อยแล้ว`);
+    showNotification(
+      isExisting
+        ? `แก้ไขข้อมูลหม้อแปลง ${transformer.peaNo} และส่งไปยัง Google Sheets แล้ว`
+        : `เพิ่มหม้อแปลง ${transformer.peaNo} และส่งไปยัง Google Sheets แล้ว`
+    );
 
-    // Immediate sync to Google Sheets if webhook connected
-    if (
-      autoSyncWebhook &&
-      webhookUrl &&
-      webhookUrl.trim() &&
-      !webhookUrl.includes('docs.google.com/spreadsheets') &&
-      webhookUrl.includes('/exec')
-    ) {
-      setSyncStatus('syncing');
-      const payload = buildWebhookPayload(nextList, config, 'sync_all');
-      sendWebhook(webhookUrl.trim(), payload)
-        .then((res) => {
-          if (res.success) {
-            setSyncStatus('synced');
-            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-          } else {
-            setSyncStatus('error');
-          }
-        })
-        .catch(() => setSyncStatus('error'));
-    }
+    pushExplicitMutationToSheets(
+      nextList,
+      config,
+      isExisting ? 'transformer_updated' : 'transformer_created'
+    );
   };
 
   const handleDeleteTransformer = (id: string) => {
     const target = transformers.find((t) => t.id === id);
     const updated = transformers.filter((t) => t.id !== id);
     setTransformers(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(updated));
+    } catch {}
+
     if (selectedTransformer?.id === id) {
       setIsDetailModalOpen(false);
       setSelectedTransformer(null);
     }
-    showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} เรียบร้อยแล้ว`);
+    showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} และอัปเดตไปยัง Google Sheets แล้ว`);
 
-    // Broadcast immediately to server master state so all other open devices reflect this deletion right away
-    fetch('/api/transformers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transformers: updated, config }),
-    })
-      .then((r) => r.json())
-      .then((data: any) => {
-        if (data && data.lastUpdated) {
-          lastServerVersionRef.current = data.lastUpdated;
-        }
-      })
-      .catch((e) => console.warn('Server master sync warning on delete:', e));
-
-    // Instant sync to Google Sheets if connected
-    if (
-      autoSyncWebhook &&
-      webhookUrl &&
-      webhookUrl.trim() &&
-      !webhookUrl.includes('docs.google.com/spreadsheets') &&
-      webhookUrl.includes('/exec')
-    ) {
-      setSyncStatus('syncing');
-      const payload = buildWebhookPayload(updated, config, 'sync_all');
-      sendWebhook(webhookUrl.trim(), payload)
-        .then((res) => {
-          if (res.success) {
-            setSyncStatus('synced');
-            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-            showNotification(`ลบหม้อแปลง ${target ? target.peaNo : ''} และซิงค์ลบใน Google Sheet สำเร็จแล้ว`);
-          } else {
-            setSyncStatus('error');
-          }
-        })
-        .catch(() => {
-          setSyncStatus('error');
-        });
-    }
+    pushExplicitMutationToSheets(updated, config, 'transformer_deleted', updated.length === 0);
   };
 
   const handleClearAllTransformers = () => {
@@ -751,44 +622,9 @@ export default function App() {
     }
     setTransformers([]);
     localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
-    showNotification('ลบหม้อแปลงทั้งหมดในระบบเรียบร้อยแล้ว');
+    showNotification('ลบหม้อแปลงทั้งหมดในระบบและล้างข้อมูลใน Google Sheet เรียบร้อยแล้ว');
 
-    // Broadcast immediately to server master state with explicit allowClear flag
-    fetch('/api/transformers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transformers: [], config, allowClear: true }),
-    })
-      .then((r) => r.json())
-      .then((data: any) => {
-        if (data && data.lastUpdated) {
-          lastServerVersionRef.current = data.lastUpdated;
-        }
-      })
-      .catch(() => {});
-
-    if (
-      webhookUrl &&
-      webhookUrl.trim() &&
-      !webhookUrl.includes('docs.google.com/spreadsheets') &&
-      webhookUrl.includes('/exec')
-    ) {
-      setSyncStatus('syncing');
-      const payload = buildWebhookPayload([], config, 'sync_all');
-      sendWebhook(webhookUrl.trim(), payload)
-        .then((res) => {
-          if (res.success) {
-            setSyncStatus('synced');
-            setLastSyncTime(new Date().toLocaleTimeString('th-TH'));
-            showNotification('ล้างข้อมูลหม้อแปลงทั้งหมดใน Google Sheet เรียบร้อยแล้ว');
-          } else {
-            setSyncStatus('error');
-          }
-        })
-        .catch(() => {
-          setSyncStatus('error');
-        });
-    }
+    pushExplicitMutationToSheets([], config, 'sync_all', true);
   };
 
   const handleMoveTransformer = (
@@ -826,39 +662,46 @@ export default function App() {
     if (!pendingMove) return;
     const { transformerId, targetSlot, targetLocationType } = pendingMove;
 
-    setTransformers((prev) => {
-      const moving = prev.find((t) => t.id === transformerId);
-      if (!moving) return prev;
+    const moving = transformers.find((t) => t.id === transformerId);
+    if (!moving) {
+      setIsMovePinModalOpen(false);
+      setPendingMove(null);
+      return;
+    }
 
-      if (targetSlot === null) {
-        return prev.map((item) => {
-          if (item.id === transformerId) {
-            return {
-              ...item,
-              slotNumber: null,
-              zone: undefined,
-              locationType: targetLocationType
-            };
-          }
-          return item;
-        });
-      }
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let nextList: Transformer[];
 
+    if (targetSlot === null) {
+      nextList = transformers.map((item) => {
+        if (item.id === transformerId) {
+          return {
+            ...item,
+            slotNumber: null,
+            zone: undefined,
+            locationType: targetLocationType,
+            updatedAt: todayStr
+          };
+        }
+        return item;
+      });
+    } else {
       // If target is occupied, swap!
-      const otherOccupant = prev.find(
+      const otherOccupant = transformers.find(
         (t) =>
           t.slotNumber === targetSlot &&
           (t.locationType === 'grid' || !t.locationType) &&
           t.id !== transformerId
       );
 
-      return prev.map((item) => {
+      nextList = transformers.map((item) => {
         if (item.id === transformerId) {
           return {
             ...item,
             slotNumber: targetSlot,
-            zone: 'left',
-            locationType: 'grid'
+            zone: 'left' as WarehouseZoneId,
+            locationType: 'grid' as TransformerLocationType,
+            updatedAt: todayStr
           };
         }
         if (otherOccupant && item.id === otherOccupant.id) {
@@ -866,12 +709,18 @@ export default function App() {
             ...item,
             slotNumber: moving.slotNumber,
             zone: moving.zone,
-            locationType: moving.locationType
+            locationType: moving.locationType,
+            updatedAt: todayStr
           };
         }
         return item;
       });
-    });
+    }
+
+    setTransformers(nextList);
+    try {
+      localStorage.setItem(STORAGE_KEY_TRANSFORMERS, JSON.stringify(nextList));
+    } catch {}
 
     // Update selectedTransformer if it is currently displayed in the detail modal
     setSelectedTransformer((curr) => {
@@ -880,7 +729,8 @@ export default function App() {
           ...curr,
           slotNumber: targetSlot,
           zone: targetSlot !== null ? 'left' : undefined,
-          locationType: targetSlot !== null ? 'grid' : targetLocationType
+          locationType: targetSlot !== null ? 'grid' : targetLocationType,
+          updatedAt: todayStr
         };
       }
       return curr;
@@ -897,9 +747,12 @@ export default function App() {
         : targetLocationType === 'sale'
         ? '🏷️ จุดวางรอขาย'
         : 'จุดพักรอจัดเก็บ';
-    showNotification(`ย้ายตำแหน่งหม้อแปลงไปยัง ${targetLabel} สำเร็จ`);
+    showNotification(`ย้ายหม้อแปลงไปยัง ${targetLabel} และอัปเดตไปยัง Google Sheets สำเร็จ`);
     setIsMovePinModalOpen(false);
     setPendingMove(null);
+
+    // Explicitly push move change to Google Sheets
+    pushExplicitMutationToSheets(nextList, config, 'transformer_moved');
   };
 
   const getMoveFromDescription = (): string => {
@@ -985,12 +838,14 @@ export default function App() {
   };
 
   const handleResetData = () => {
-    if (confirm('คุณต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้นตัวอย่างใช่หรือไม่?')) {
-      setTransformers(INITIAL_TRANSFORMERS);
+    if (confirm('คุณต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้นตัวอย่าง และส่งขึ้น Google Sheets ใช่หรือไม่?')) {
+      const sanitizedInitial = INITIAL_TRANSFORMERS.map(sanitizeTransformer);
+      setTransformers(sanitizedInitial);
       setConfig(DEFAULT_WAREHOUSE_CONFIG);
       localStorage.removeItem(STORAGE_KEY_TRANSFORMERS);
       localStorage.removeItem(STORAGE_KEY_CONFIG);
       showNotification('รีเซ็ตข้อมูลตัวอย่างเรียบร้อยแล้ว');
+      pushExplicitMutationToSheets(sanitizedInitial, DEFAULT_WAREHOUSE_CONFIG, 'sync_all');
     }
   };
 
@@ -1000,43 +855,44 @@ export default function App() {
     const limit = gridCols * gridRows;
     let movedCount = 0;
 
-    // Safely relocate any transformers located in slots that exceed the new boundary
-    setTransformers((prev) => {
-      let changed = false;
-      const updated = prev.map((t) => {
-        if (t.slotNumber === null || t.locationType === 'triage' || t.locationType === 'holding' || t.locationType === 'repair' || t.locationType === 'sale') {
-          return t;
-        }
-
-        if (t.slotNumber > limit) {
-          movedCount++;
-          changed = true;
-          return {
-            ...t,
-            slotNumber: null,
-            zone: undefined,
-            locationType: 'holding' as TransformerLocationType,
-            updatedAt: new Date().toISOString().split('T')[0],
-            notes: t.notes
-              ? `${t.notes} (ย้ายจากช่องเดิม #${t.slotNumber} เนื่องจากปรับขนาดผัง)`
-              : `ย้ายจากช่องเดิม #${t.slotNumber} เนื่องจากปรับขนาดผัง`,
-          };
-        }
+    let changed = false;
+    const nextList = transformers.map((t) => {
+      if (t.slotNumber === null || t.locationType === 'triage' || t.locationType === 'holding' || t.locationType === 'repair' || t.locationType === 'sale') {
         return t;
-      });
-      return changed ? updated : prev;
+      }
+
+      if (t.slotNumber > limit) {
+        movedCount++;
+        changed = true;
+        return {
+          ...t,
+          slotNumber: null,
+          zone: undefined,
+          locationType: 'holding' as TransformerLocationType,
+          updatedAt: new Date().toISOString().split('T')[0],
+          notes: t.notes
+            ? `${t.notes} (ย้ายจากช่องเดิม #${t.slotNumber} เนื่องจากปรับขนาดผัง)`
+            : `ย้ายจากช่องเดิม #${t.slotNumber} เนื่องจากปรับขนาดผัง`,
+        };
+      }
+      return t;
     });
 
+    if (changed) {
+      setTransformers(nextList);
+    }
     setConfig(newConfig);
 
     if (movedCount > 0) {
       showNotification(
         `ปรับขนาดผังเรียบร้อย (${gridCols} คอลัมน์ × ${gridRows} แถว = ${limit} ช่อง, ย้าย ${movedCount} เครื่องที่เกินขนาดไปจุดพัก)`
       );
+      pushExplicitMutationToSheets(nextList, newConfig, 'transformer_moved');
     } else {
       showNotification(
         `ปรับขนาดผังเรียบร้อย (${gridCols} คอลัมน์ × ${gridRows} แถว = ${limit} ช่อง)`
       );
+      pushExplicitMutationToSheets(transformers, newConfig, 'sync_all');
     }
   };
 
@@ -1371,8 +1227,10 @@ export default function App() {
         transformers={transformers}
         config={config}
         onImportTransformers={(imported) => {
-          setTransformers(imported);
-          showNotification(`นำเข้าข้อมูลสำเร็จ ${imported.length} เครื่อง`);
+          const cleanImported = imported.map(sanitizeTransformer);
+          setTransformers(cleanImported);
+          showNotification(`นำเข้าข้อมูลสำเร็จ ${cleanImported.length} เครื่อง`);
+          pushExplicitMutationToSheets(cleanImported, config, 'sync_all');
         }}
         onNotify={showNotification}
       />

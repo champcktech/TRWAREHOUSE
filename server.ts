@@ -347,6 +347,7 @@ async function fetchGoogleSheetsTransformers(
         const locationStr = (row[locationCol] || '').trim();
         let slotNumber: number | null = null;
         let locationType: 'grid' | 'holding' | 'triage' | 'repair' | 'sale' = 'grid';
+        let repairVendor: string | undefined = undefined;
 
         if (locationStr.includes('คัดแยก') || locationStr.includes('triage')) {
           locationType = 'triage';
@@ -358,8 +359,13 @@ async function fetchGoogleSheetsTransformers(
         ) {
           locationType = 'repair';
           slotNumber = null;
+          const vendorMatch = locationStr.match(/\(([^)]+)\)/);
+          if (vendorMatch && vendorMatch[1]) {
+            repairVendor = vendorMatch[1].trim();
+          }
         } else if (
           locationStr.includes('รอขาย') ||
+          locationStr.includes('รอจำหน่าย') ||
           locationStr.includes('sale') ||
           locationStr.includes('ประมูล')
         ) {
@@ -395,6 +401,7 @@ async function fetchGoogleSheetsTransformers(
           status,
           slotNumber,
           locationType,
+          repairVendor,
           receivedDate,
           updatedAt,
           notes,
@@ -403,17 +410,20 @@ async function fetchGoogleSheetsTransformers(
 
       lastSheetFetchTime = Date.now();
 
-      // Grace period protection: if a user recently added, edited, or moved a transformer in the app (within 30 seconds),
-      // ensure we do not drop transformers that the sheet has not recorded yet!
-      const isRecentlyMutatedLocally = Date.now() - (masterState.lastLocalMutationTime || 0) < 30000;
-      if (isRecentlyMutatedLocally && masterState.transformers.length > 0) {
-        const sheetPeaSet = new Set(parsedTransformers.map((t) => (t.peaNo || '').trim().toLowerCase()));
-        const unwrittenLocal = masterState.transformers.filter(
-          (t) => !sheetPeaSet.has((t.peaNo || '').trim().toLowerCase())
-        );
-        if (unwrittenLocal.length > 0) {
-          parsedTransformers.push(...unwrittenLocal);
-        }
+      // If an explicit user action (Add / Edit / Delete / Move) was performed in the last 10 seconds,
+      // Apps Script may still be writing to Google Sheets. Return the fresh mutated masterState without overwriting it.
+      const isWriteInFlight = Date.now() - (masterState.lastLocalMutationTime || 0) < 10000;
+      if (isWriteInFlight && masterState.transformers.length > 0) {
+        return {
+          success: true,
+          count: masterState.transformers.length,
+          transformers: masterState.transformers,
+          sheetName: usedSheetName,
+          spreadsheetId,
+          spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+          timestamp: new Date().toLocaleTimeString('th-TH'),
+          lastUpdated: masterState.lastUpdated,
+        };
       }
 
       const newSignature = parsedTransformers
